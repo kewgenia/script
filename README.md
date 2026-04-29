@@ -6,14 +6,14 @@
 
 ### Доступные скрипты:
 
-1. **[`debian-update.sh`](DEBIAN_UPDATE.md)** — автоматизация полного цикла обновления системы (подробнее в [DEBIAN_UPDATE.md](DEBIAN_UPDATE.md))
-2. **[`apt-mirror-check.sh`](APT_MIRROR_CHECK.md)** — управление APT репозиториями и зеркалами (подробнее в [APT_MIRROR_CHECK.md](APT_MIRROR_CHECK.md))
+1. **[`debian-update.sh`](docs/DEBIAN_UPDATE.md)** — автоматизация полного цикла обновления системы (подробнее в [DEBIAN_UPDATE.md](docs/DEBIAN_UPDATE.md))
+2. **[`apt-mirror-check.sh`](docs/APT_MIRROR_CHECK.md)** — управление APT репозиториями и зеркалами (подробнее в [APT_MIRROR_CHECK.md](docs/APT_MIRROR_CHECK.md))
 
 ---
 
 ## debian-update.sh
 
-Подробная документация: **[DEBIAN_UPDATE.md](DEBIAN_UPDATE.md)**
+Подробная документация: **[DEBIAN_UPDATE.md](docs/DEBIAN_UPDATE.md)**
 
 ### Описание
 
@@ -198,7 +198,7 @@ sudo rm -rf /var/cache/apt/archives/*
 
 ## apt-mirror-check.sh
 
-Подробная документация: **[APT_MIRROR_CHECK.md](APT_MIRROR_CHECK.md)**
+Подробная документация: **[APT_MIRROR_CHECK.md](docs/APT_MIRROR_CHECK.md)**
 
 ### Описание
 
