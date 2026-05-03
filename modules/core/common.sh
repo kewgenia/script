@@ -1,8 +1,8 @@
-#!/bin/bash
+﻿#!/bin/bash
 # ============================================================ #
 # ==                 CORE COMMON FUNCTIONS                  == #
 # ============================================================ #
-# Этот файл содержит базовые функции для UI, цвета и взаимодействия
+# Этот файл содержит базовые функции для UI, цвета и взаимодействие
 # с пользователем.
 
 # --- Цвета ---
@@ -83,7 +83,7 @@ disable_graceful_ctrlc() {
     trap - INT
 }
 
-# --- Выполнение команд ---
+# --- Выполнение команды ---
 run_cmd() {
     log "Выполнение: $*"
     if eval "$@" >> "$LOG_FILE" 2>&1; then
@@ -100,4 +100,91 @@ check_root() {
         err "Этот скрипт должен выполняться от имени root. Используйте sudo."
         exit 1
     fi
+}
+
+# --- Парсер манифестов меню (@menu.manifest) ---
+# Глобальные переменные для кэширования манифестов
+declare -a _MANIFEST_ITEMS=()
+
+# Парсинг всех манифестов в модулях
+_parse_all_manifests() {
+    _MANIFEST_ITEMS=()
+    local module_dir="$SCRIPT_DIR/modules"
+    
+    if [[ ! -d "$module_dir" ]]; then
+        return
+    fi
+    
+    # Находим все .sh файлы
+    local files
+    files=$(find "$module_dir" -name "*.sh" -type f 2>/dev/null) || return
+    
+    local file
+    while IFS= read -r file; do
+        [[ -r "$file" ]] || continue
+        
+        while IFS= read -r line; do
+            # Ищем строки вида: # @item( menu_id | key | label | action | ... )
+            if [[ "$line" == *"@item("* ]]; then
+                # Извлекаем содержимое между скобками @item( и )
+                local content
+                content=$(echo "$line" | sed 's/.*@item(//' | sed 's/).*//')
+                
+                # Сохраняем в массив: "menu_id|key|label|action"
+                if [[ -n "$content" ]]; then
+                    _MANIFEST_ITEMS+=("$content")
+                fi
+            fi
+        done < "$file"
+    done <<< "$files"
+}
+
+# Рендеринг пунктов меню для указанного menu_id
+render_menu_items() {
+    local menu_id="$1"
+    
+    # Парсим манифесты, если еще не сделано
+    if [[ ${#_MANIFEST_ITEMS[@]} -eq 0 ]]; then
+        _parse_all_manifests
+    fi
+    
+    # Выводим пункты для указанного menu_id
+    local item
+    for item in "${_MANIFEST_ITEMS[@]}"; do
+        IFS='|' read -ra parts <<< "$item"
+        
+        local item_menu_id=$(echo "${parts[0]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        local item_key=$(echo "${parts[1]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        local item_label=$(echo "${parts[2]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        
+        if [[ "$item_menu_id" == "$menu_id" ]]; then
+            printf_menu_option "$item_key" "$item_label"
+        fi
+    done
+}
+
+# Получение действия для указанного menu_id и ключа выбора
+get_menu_action() {
+    local menu_id="$1"
+    local key="$2"
+    
+    # Парсим манифесты, если еще не сделано
+    if [[ ${#_MANIFEST_ITEMS[@]} -eq 0 ]]; then
+        _parse_all_manifests
+    fi
+    
+    local item
+    for item in "${_MANIFEST_ITEMS[@]}"; do
+        IFS='|' read -ra parts <<< "$item"
+        
+        local item_menu_id=$(echo "${parts[0]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        local item_key=$(echo "${parts[1]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        local item_action=$(echo "${parts[3]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+        
+        if [[ "$item_menu_id" == "$menu_id" ]] && [[ "$item_key" == "$key" ]]; then
+            echo "$item_action"
+            return 0
+        fi
+    done
+    return 1
 }
