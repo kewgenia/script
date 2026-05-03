@@ -20,6 +20,8 @@
 ### Добавлено
 - Файл инструкций `.instructions` для ассистента
 - Журнал изменений `CHANGELOG.md`
+- Поддержка установки одной командой через curl: `bash <(curl -Ls https://raw.githubusercontent.com/kewgenia/script/main/install.sh)`
+- Автоматическое скачивание и распаковка репозитория при удаленной установке
 
 ### Изменено
 - **Ребрендинг проекта:** удаление "VPS" из названия и контекста
@@ -27,11 +29,14 @@
   - Переименование `docs/vps-security-initial-setup.md` → `docs/server-initial-setup.md`
   - Обновление путей установки: `/opt/server-setup`, команда `server-setup`
   - Обновление лог-файла: `/var/log/server-setup.log`
-- Обновление `README.md` с профессиональным оформлением
-- Обновление `RELEASE_NOTES.md` для версии v2.0
-- Обновление `install.sh` с новыми путями и описанием
+- Обновление `install.sh` с поддержкой удаленной установки и новыми путями
+- Обновление `README.md` с профессиональным оформлением и командой установки одной строкой
+- Обновление `RELEASE_NOTES.md` для версии v2.0 с новыми инструкциями
 - Обновление документации: `docs/GUIDE_MODULES.md`, `docs/STYLE_GUIDE.md`, `docs/Структура.md`
 - Обновление модулей: `modules/security/mirror_check.sh`, `modules/core/common.sh`
+
+### Удалено
+- Устаревшие файлы: `apt-mirror-check.sh`, `debian-update.sh`
 
 ## [2.0.0] - 2026-05-02
 
