@@ -9,7 +9,9 @@
 set -euo pipefail
 
 # --- Конфигурация ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Определяем реальный путь к скрипту (с учетом симлинков)
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 export SCRIPT_DIR
 LOG_FILE="/var/log/server-setup.log"
 export LOG_FILE
