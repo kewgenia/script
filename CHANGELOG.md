@@ -4,13 +4,35 @@
 
 Формат основан на [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
-## [Не выпущено]
+## [2.2.0] - 2026-05-03
+
+### Добавлено
+- **11 новых модулей** для расширения функциональности:
+  - `modules/security/user_management.sh` — управление пользователями (создание, SSH-ключи, sudo)
+  - `modules/security/ssh_hardening.sh` — настройка SSH и 2FA
+  - `modules/security/firewall.sh` — фаервол UFW (правила, IPv6)
+  - `modules/security/intrusion_prevention.sh` — защита (Fail2Ban/CrowdSec)
+  - `modules/system/auto_updates.sh` — автообновления (unattended-upgrades)
+  - `modules/system/system_hardening.sh` — ядро и система (sysctl, hostname)
+  - `modules/network/network_tools.sh` — сетевые инструменты (Docker, Tailscale, NetBird)
+  - `modules/system/backup.sh` — бэкапы (rsync)
+  - `modules/system/resource_management.sh` — ресурсы (swap, время)
+  - `modules/system/audit_cleanup.sh` — аудит и очистка (Lynis, провайдеры)
+  - `modules/core/custom_bashrc.sh` — кастомизация .bashrc
+
+### Изменено
+- **Улучшение существующих модулей:**
+  - `modules/security/system_update.sh` — исправлены UI хелперы, обновлены переменные цветов, меню переведено на `render_menu_items`/`get_menu_action`
+  - `modules/security/mirror_check.sh` — аналогичные улучшения для соответствия единому стилю
+
+- **Соблюдение стандартов:**
+  - Все модули соответствуют `docs/STYLE_GUIDE.md` и `docs/GUIDE_MODULES.md`
+  - Используются функции из `modules/core/common.sh`: `info`, `ok`, `warn`, `err`, `ask_yes_no`, `safe_read`, `run_cmd`, `menu_header`, `printf_description`, `printf_menu_option`, `render_menu_items`, `get_menu_action`
 
 ### Планируется
-- Добавление пользовательского меню (создание пользователя, SSH-ключи)
-- Настройка фаервола (UFW/Firewalld)
-- Установка и настройка Fail2ban
-- Автоматический режим настройки сервера
+- Добавление пользовательского дашборда (dashboard)
+- Плагины для виджетов дашборда
+- Расширение системы конфигурации (`config/server.conf`)
 
 ### Исправлено
 - Исправлена кодировка файла `modules/core/common.sh` (удален BOM, исправлен русский текст, отображавшийся некорректно)
@@ -136,7 +158,7 @@
 
 ---
 
-[Не выпущено]: https://github.com/kewgenia/script/compare/v2.1.0...HEAD
+[2.2.0]: https://github.com/kewgenia/script/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/kewgenia/script/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/kewgenia/script/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/kewgenia/script/compare/v1.2.0...v2.0.0

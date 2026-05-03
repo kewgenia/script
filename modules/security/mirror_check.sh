@@ -2,8 +2,12 @@
 # ============================================================ #
 # ==           МОДУЛЬ: УПРАВЛЕНИЕ ЗЕРКАЛАМИ APT            == #
 # ============================================================ #
+# Настройка и управление репозиториями APT.
+# Версия: 2.0.0
+
 #
 # @menu.manifest
+#
 # @item( main | 2 | 🌐 Зеркала APT | show_mirror_check_menu | 20 | 10 | Настройка репозиториев )
 # @item( mirror_check | 1 | Заменить на зеркала Yandex | _replace_with_yandex_menu | 10 | 10 | Быстрая замена на mirror.yandex.ru )
 # @item( mirror_check | 2 | Ввести зеркала вручную | _manual_mirror_input | 20 | 10 | Настройка пользовательских зеркал )
@@ -11,6 +15,7 @@
 # @item( mirror_check | 4 | Восстановить из бэкапа | _restore_backup | 40 | 10 | Откат к сохраненной конфигурации )
 # @item( mirror_check | 5 | Показать текущие репозитории | _show_repositories | 50 | 10 | Просмотр активных источников )
 #
+
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] && exit 1
 
 # --- Локальные переменные модуля ---
@@ -73,7 +78,7 @@ _show_repositories() {
     while IFS= read -r line; do
         if [[ -n "$line" ]]; then
             count=$((count + 1))
-            echo -e "  ${C_BLUE}$count.${C_RESET} $line"
+            echo -e "  ${CYAN}$count.${NC} $line"
         fi
     done < "$repo_list"
     
@@ -219,7 +224,7 @@ _restore_backup() {
     menu_header "Доступные резервные копии"
     local i=1
     echo "$backups" | while IFS= read -r backup; do
-        echo -e "  ${C_GREEN}$i.${C_RESET} $backup"
+        echo -e "  ${GREEN}$i.${NC} $backup"
         i=$((i + 1))
     done
     
@@ -249,30 +254,36 @@ _restore_backup() {
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
 
 show_mirror_check_menu() {
+    local menu_id="mirror_check"
+    
     enable_graceful_ctrlc
     while true; do
+        clear
         menu_header "🌐 Управление зеркалами APT"
         printf_description "Настройка источников пакетов для вашей системы."
         
-        printf_menu_option "1" "Заменить на зеркала Yandex"
-        printf_menu_option "2" "Ввести зеркала вручную"
-        printf_menu_option "3" "Обновить списки пакетов"
-        printf_menu_option "4" "Восстановить из бэкапа"
-        printf_menu_option "5" "Показать текущие репозитории"
+        # Автоматическая отрисовка пунктов меню
+        render_menu_items "$menu_id"
+        
         printf_menu_option "b" "Назад в главное меню"
         
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
-        case "$choice" in
-            1) _replace_with_yandex_menu ;;
-            2) _manual_mirror_input ;;
-            3) _update_package_lists ;;
-            4) _restore_backup ;;
-            5) _show_repositories ;;
-            b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
-        esac
+        # Выход из меню
+        if [[ "$choice" == "b" || "$choice" == "B" ]]; then
+            break
+        fi
+        
+        # Получаем и выполняем действие
+        local action
+        action=$(get_menu_action "$menu_id" "$choice")
+        
+        if [[ -n "$action" ]]; then
+            eval "$action"
+        else
+            err "Нет такого пункта." && sleep 1
+        fi
     done
     disable_graceful_ctrlc
 }

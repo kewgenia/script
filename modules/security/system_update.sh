@@ -2,8 +2,12 @@
 # ============================================================ #
 # ==           МОДУЛЬ: ОБНОВЛЕНИЕ СИСТЕМЫ                  == #
 # ============================================================ #
+# Обновление пакетов, очистка системы и проверка перезагрузки.
+# Версия: 2.0.0
+
 #
 # @menu.manifest
+#
 # @item( main | 1 | 🔄 Обновление системы | show_system_update_menu | 10 | 10 | Обновление пакетов Debian/Ubuntu )
 # @item( system_update | 1 | Обновить списки пакетов | _update_package_lists | 10 | 10 | apt-get update )
 # @item( system_update | 2 | Обновить установленные пакеты | _upgrade_packages | 20 | 10 | apt-get upgrade )
@@ -12,6 +16,7 @@
 # @item( system_update | 5 | Проверить необходимость перезагрузки | _check_reboot_required | 50 | 10 | Проверка /var/run/reboot-required )
 # @item( system_update | 6 | ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты) | _full_system_update | 60 | 20 | Выполнить пункты 1-4 + проверка перезагрузки )
 #
+
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] && exit 1 # Защита от прямого запуска
 
 # === ЛОКАЛЬНЫЕ ХЕЛПЕРЫ =====================
@@ -43,7 +48,7 @@ _check_reboot_required() {
         if [[ -f /var/run/reboot-required.pkgs ]]; then
             info "Пакеты, требующие перезагрузки:"
             while IFS= read -r pkg; do
-                echo -e "  ${C_CYAN}- $pkg${C_RESET}"
+                echo -e "  ${CYAN}- $pkg${NC}"
             done < /var/run/reboot-required.pkgs
         fi
     else
@@ -92,32 +97,36 @@ _full_system_update() {
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
 
 show_system_update_menu() {
+    local menu_id="system_update"
+    
     enable_graceful_ctrlc
     while true; do
+        clear
         menu_header "🔄 Обновление системы"
         printf_description "Выберите действие для обновления вашей системы Debian/Ubuntu."
         
-        printf_menu_option "1" "Обновить списки пакетов"
-        printf_menu_option "2" "Обновить установленные пакеты"
-        printf_menu_option "3" "Удалить ненужные пакеты"
-        printf_menu_option "4" "Очистить кэш пакетов"
-        printf_menu_option "5" "Проверить необходимость перезагрузки"
-        printf_menu_option "6" "ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты)"
+        # Автоматическая отрисовка пунктов меню
+        render_menu_items "$menu_id"
+        
         printf_menu_option "b" "Назад в главное меню"
         
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
-        case "$choice" in
-            1) _update_package_lists ;;
-            2) _upgrade_packages ;;
-            3) _autoremove_packages ;;
-            4) _clean_cache ;;
-            5) _check_reboot_required ;;
-            6) _full_system_update ;;
-            b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
-        esac
+        # Выход из меню
+        if [[ "$choice" == "b" || "$choice" == "B" ]]; then
+            break
+        fi
+        
+        # Получаем и выполняем действие
+        local action
+        action=$(get_menu_action "$menu_id" "$choice")
+        
+        if [[ -n "$action" ]]; then
+            eval "$action"
+        else
+            err "Нет такого пункта." && sleep 1
+        fi
     done
     disable_graceful_ctrlc
 }
