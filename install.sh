@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================ #
-# ==           СКРИПТ УСТАНОВКИ VPS SECURITY              == #
+# ==           СКРИПТ УСТАНОВКИ SERVER SETUP              == #
 # ============================================================ #
-# Этот скрипт устанавливает VPS Security Setup в систему.
-# По умолчанию устанавливает в /opt/vps-security-setup
+# Этот скрипт устанавливает Server Setup в систему.
+# По умолчанию устанавливает в /opt/server-setup
 # и создает симлинк в /usr/local/bin.
 
 set -euo pipefail
@@ -31,11 +31,11 @@ if [[ "$(id -u)" -ne 0 ]]; then
     exit 1
 fi
 
-INSTALL_DIR="/opt/vps-security-setup"
-LINK_PATH="/usr/local/bin/vps-security-setup"
+INSTALL_DIR="/opt/server-setup"
+LINK_PATH="/usr/local/bin/server-setup"
 
 print_msg "$BLUE" "============================================"
-print_msg "$BLUE" "  Установка VPS Security Initial Setup"
+print_msg "$BLUE" "  Установка Server Setup"
 print_msg "$BLUE" "============================================"
 echo ""
 
@@ -57,7 +57,7 @@ fi
 
 # 3. Установка прав на исполнение
 print_msg "$YELLOW" "3. Установка прав на исполнение..."
-chmod +x "$INSTALL_DIR/vps-security-setup.sh"
+chmod +x "$INSTALL_DIR/server-setup.sh"
 chmod +x "$INSTALL_DIR/install.sh"
 find "$INSTALL_DIR" -name "*.sh" -exec chmod +x {} \;
 
@@ -67,7 +67,7 @@ print_msg "$YELLOW" "4. Создание симлинка: $LINK_PATH"
 if [[ -e "$LINK_PATH" ]]; then
     rm -f "$LINK_PATH"
 fi
-ln -s "$INSTALL_DIR/vps-security-setup.sh" "$LINK_PATH"
+ln -s "$INSTALL_DIR/server-setup.sh" "$LINK_PATH"
 
 # Проверяем, что симлинк создан и доступен в PATH
 if [[ -L "$LINK_PATH" ]]; then
@@ -99,8 +99,8 @@ print_msg "$GREEN" "  Установка завершена успешно!"
 print_msg "$GREEN" "============================================"
 echo ""
 print_msg "$BLUE" "Как использовать:"
-print_msg "$CYAN" "  sudo vps-security-setup"
+print_msg "$CYAN" "  sudo server-setup"
 echo ""
 print_msg "$BLUE" "Или запустите напрямую:"
-print_msg "$CYAN" "  sudo $INSTALL_DIR/vps-security-setup.sh"
+print_msg "$CYAN" "  sudo $INSTALL_DIR/server-setup.sh"
 echo ""

@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================ #
-# ==           VPS SECURITY INITIAL SETUP                  == #
+# ==           SERVER SETUP                                == #
 # ============================================================ #
-# Главный скрипт для первоначальной настройки безопасности VPS.
+# Главный скрипт для первоначальной настройки и администрирования сервера.
 # Использует модульную архитектуру с манифестами меню.
 # Версия: 1.0.0
 
@@ -11,7 +11,7 @@ set -euo pipefail
 # --- Конфигурация ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export SCRIPT_DIR
-LOG_FILE="/var/log/vps-security-setup.log"
+LOG_FILE="/var/log/server-setup.log"
 export LOG_FILE
 
 # --- Подключение ядра ---
@@ -81,8 +81,8 @@ main() {
     check_root
     
     while true; do
-        menu_header "🛡️ VPS Security Initial Setup"
-        printf_description "Пошаговая настройка безопасности сервера с нуля."
+        menu_header "🛡️ Server Setup"
+        printf_description "Первоначальная настройка, установка ПО и администрирование сервера."
         
         echo -e "${C_BOLD}Основные шаги:${C_RESET}"
         show_main_menu_items

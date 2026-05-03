@@ -131,7 +131,7 @@ show_security_menu() {
 - **Логирование:**
   - Пишите в лог-файл проекта через `log "Мое сообщение для лога"`.
 - **Конфигурация:**
-  - Читайте и пишите в `config/vps-security.conf` только через `get_config_var "KEY"` и `set_config_var "KEY" "VALUE"`.
+  - Читайте и пишите в `config/server.conf` только через `get_config_var "KEY"` и `set_config_var "KEY" "VALUE"`.
 - **Зависимости:**
   - Для проверки и установки утилит (`curl`, `jq`) используйте `ensure_dependencies "curl" "jq"`.
 

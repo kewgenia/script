@@ -1,12 +1,12 @@
-# 🛡️ VPS Security Initial Setup
+# 🛡️ Server Setup
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)
 ![Shell: Bash](https://img.shields.io/badge/Shell-Bash-green.svg)
 
-**Модульный скрипт для первоначальной настройки и усиления безопасности серверов под управлением Debian/Ubuntu.**
+**Модульный инструмент для первоначальной настройки, установки ПО и администрирования серверов под управлением Debian/Ubuntu.**
 
-Проект предоставляет интерактивное меню для автоматизации рутинных задач по защите VPS, следуя лучшим практикам информационной безопасности.
+Проект предоставляет интерактивное меню для автоматизации рутинных задач по настройке и администрированию сервера, следуя лучшим практикам информационной безопасности.
 
 ---
 
@@ -32,14 +32,14 @@
 ## 📦 Быстрый старт
 
 ### 1. Клонирование и установка
-Скрипт устанавливается в директорию `/opt/vps-security-setup` и создает симлинк для быстрого доступа.
+Скрипт устанавливается в директорию `/opt/server-setup` и создает симлинк для быстрого доступа.
 
 ```bash
 # Клонирование репозитория (если еще не сделано)
-git clone https://github.com/kewgenia/script.git /opt/vps-security-setup
+git clone https://github.com/kewgenia/script.git /opt/server-setup
 
 # Запуск установщика
-cd /opt/vps-security-setup
+cd /opt/server-setup
 sudo bash install.sh
 ```
 
@@ -47,7 +47,7 @@ sudo bash install.sh
 После установки скрипт доступен глобально:
 
 ```bash
-sudo vps-security-setup
+sudo server-setup
 ```
 
 ---
@@ -58,7 +58,7 @@ sudo vps-security-setup
 
 ```text
 .
-├── vps-security-setup.sh   # Главный скрипт (точка входа)
+├── server-setup.sh         # Главный скрипт (точка входа)
 ├── install.sh              # Скрипт установки в систему
 ├── modules/
 │   ├── core/
@@ -88,7 +88,7 @@ sudo vps-security-setup
 1. Создайте файл в `modules/security/`.
 2. Добавьте блок `@menu.manifest` с описанием пунктов меню.
 3. Реализуйте логику в функциях.
-4. Подключите модуль в `vps-security-setup.sh`.
+4. Подключите модуль в `server-setup.sh`.
 
 ---
 

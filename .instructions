@@ -1,4 +1,4 @@
-# Инструкции для ассистента проекта VPS Security Initial Setup
+# Инструкции для ассистента проекта Server Setup
 # Этот файл содержит настройки и инструкции для работы с проектом
 
 # ============================================
@@ -15,14 +15,14 @@ LANGUAGE=ru
 
 # Тип проекта
 PROJECT_TYPE=bash_script
-PROJECT_DESCRIPTION=Модульный скрипт для первоначальной настройки и усиления безопасности VPS серверов (Debian/Ubuntu)
+PROJECT_DESCRIPTION=Модульный инструмент для первоначальной настройки, установки ПО и администрирования серверов (Debian/Ubuntu)
 
 # Технологический стек
 TECH_STACK=Bash,Linux,APT,Debian,Ubuntu
 
 # Репозиторий
 GITHUB_REPO=https://github.com/kewgenia/script.git
-INSTALL_PATH=/opt/vps-security-setup
+INSTALL_PATH=/opt/server-setup
 
 # ============================================
 # РАБОЧИЙ ПРОЦЕСС (GIT)
@@ -78,8 +78,8 @@ INSTALL_PATH=/opt/vps-security-setup
 
 # Инструкции для режима Debug
 [mode:debug]
-- Проверяй логи в /var/log/vps-security-setup.log
-- Тестируй модули через run_module в vps-security-setup.sh
+- Проверяй логи в /var/log/server-setup.log
+- Тестируй модули через run_module в server-setup.sh
 - При проблемах с меню проверяй корректность @menu.manifest
 - Проверяй права доступа (скрипт требует root/sudo)
 - Тестируй на чистой установке Debian/Ubuntu при возможности
@@ -98,12 +98,12 @@ INSTALL_PATH=/opt/vps-security-setup
 # ============================================
 
 # Структура файлов
-- Главный скрипт: vps-security-setup.sh
+- Главный скрипт: server-setup.sh
 - Ядро системы: modules/core/common.sh
 - Модули безопасности: modules/security/*.sh
 - Документация: docs/
 - Установщик: install.sh
-- Конфигурация: config/vps-security.conf (в планах)
+- Конфигурация: config/server.conf (в планах)
 
 # Стандарты кода (СТРОГО ОБЯЗАТЕЛЬНО)
 - Шебанг: #!/bin/bash
@@ -124,7 +124,7 @@ INSTALL_PATH=/opt/vps-security-setup
 
 # Безопасность
 - Скрипт требует прав root (проверка check_root)
-- Все системные команды через run_cmd (логируется в /var/log/vps-security-setup.log)
+- Все системные команды через run_cmd (логируется в /var/log/server-setup.log)
 - Защита от Ctrl+C: enable_graceful_ctrlc / disable_graceful_ctrlc
 - НИКОГДА не коммить чувствительные данные или пароли
 

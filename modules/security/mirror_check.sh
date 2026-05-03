@@ -132,7 +132,7 @@ _replace_with_yandex_menu() {
     new_sources=$(mktemp)
     
     {
-        echo "# Файл сгенерирован скриптом VPS Security Setup"
+        echo "# Файл сгенерирован скриптом Server Setup"
         echo "# Дата: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "# Зеркало: $yandex_mirror"
         echo ""
@@ -184,7 +184,7 @@ _manual_mirror_input() {
     new_sources=$(mktemp)
     
     {
-        echo "# Файл сгенерирован скриптом VPS Security Setup"
+        echo "# Файл сгенерирован скриптом Server Setup"
         echo "# Пользовательское зеркало: $mirror_url"
         echo ""
         echo "deb ${mirror_url%/} $DISTRO_CODENAME main contrib non-free non-free-firmware"

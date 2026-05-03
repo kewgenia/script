@@ -16,7 +16,7 @@ export C_BOLD='\033[1m'
 export C_RESET='\033[0m'
 
 # --- Логирование ---
-LOG_FILE="/var/log/vps-security-setup.log"
+LOG_FILE="/var/log/server-setup.log"
 debug_log() { echo -e "${C_GRAY}[DEBUG] $1${C_RESET}"; }
 info()    { echo -e "${C_BLUE}[INFO] $1${C_RESET}"; }
 ok()      { echo -e "${C_GREEN}[OK] $1${C_RESET}"; }
