@@ -3,13 +3,15 @@
 # ==           СКРИПТ УСТАНОВКИ SERVER SETUP              == #
 # ============================================================ #
 # Этот скрипт устанавливает Server Setup в систему.
-# По умолчанию устанавливает в /opt/server-setup
-# и создает симлинк в /usr/local/bin.
+# Поддерживает как локальную установку, так и удаленную через curl.
+# Удаленная установка: bash <(curl -Ls https://raw.githubusercontent.com/kewgenia/script/main/install.sh)
 
 set -euo pipefail
 
-# Определяем директорию, где находится скрипт
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Конфигурация репозитория
+REPO_URL="https://github.com/kewgenia/script"
+RAW_BASE_URL="https://raw.githubusercontent.com/kewgenia/script/main"
+ARCHIVE_URL="https://github.com/kewgenia/script/archive/refs/heads/main.tar.gz"
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -24,6 +26,126 @@ print_msg() {
     local msg=$2
     echo -e "${color}${msg}${NC}"
 }
+
+# Функция для проверки наличия необходимых утилит
+check_dependency() {
+    if ! command -v "$1" &> /dev/null; then
+        return 1
+    fi
+    return 0
+}
+
+# Функция для скачивания файла
+download_file() {
+    local url="$1"
+    local output="$2"
+    
+    if check_dependency "curl"; then
+        curl -fsSL "$url" -o "$output"
+    elif check_dependency "wget"; then
+        wget -q "$url" -O "$output"
+    else
+        print_msg "$RED" "Ошибка: Не найдены curl или wget для скачивания файлов"
+        return 1
+    fi
+}
+
+# Определяем, запущен ли скрипт удаленно (через curl | bash)
+# Проверяем несколько условий:
+# 1. Скрипт запущен из stdin (pipe)
+# 2. Директория скрипта не содержит ожидаемую структуру (нет server-setup.sh)
+is_remote_install() {
+    local script_dir="$1"
+    
+    # Проверка на pipe (stdin не терминал)
+    if [[ ! -t 0 ]]; then
+        return 0
+    fi
+    
+    # Проверка на отсутствие файлов проекта в директории скрипта
+    if [[ ! -f "$script_dir/server-setup.sh" ]] || [[ ! -d "$script_dir/modules" ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Основная логика удаленной установки
+remote_install() {
+    print_msg "$BLUE" "============================================"
+    print_msg "$BLUE" "  Удаленная установка Server Setup"
+    print_msg "$BLUE" "  Репозиторий: $REPO_URL"
+    print_msg "$BLUE" "============================================"
+    echo ""
+    
+    # Проверка прав root
+    if [[ "$(id -u)" -ne 0 ]]; then
+        print_msg "$RED" "Ошибка: Скрипт должен запускаться от root (используйте sudo)"
+        exit 1
+    fi
+    
+    # Создаем временную директорию
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    print_msg "$YELLOW" "Создана временная директория: $temp_dir"
+    
+    # Скачиваем архив репозитория
+    print_msg "$YELLOW" "Скачивание репозитория..."
+    local archive_path="$temp_dir/repo.tar.gz"
+    
+    if ! download_file "$ARCHIVE_URL" "$archive_path"; then
+        print_msg "$RED" "Ошибка: Не удалось скачать репозиторий"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    # Распаковываем архив
+    print_msg "$YELLOW" "Распаковка репозитория..."
+    if ! tar -xzf "$archive_path" -C "$temp_dir"; then
+        print_msg "$RED" "Ошибка: Не удалось распаковать архив"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    # Находим распакованную директорию (обычно script-main или script-branch)
+    local extracted_dir
+    extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "script-*" | head -n 1)
+    
+    if [[ -z "$extracted_dir" ]]; then
+        print_msg "$RED" "Ошибка: Не удалось найти распакованную директорию"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    print_msg "$GREEN" "Репозиторий успешно скачан и распакован"
+    
+    # Запускаем локальную установку из распакованной директории
+    print_msg "$YELLOW" "Запуск локальной установки..."
+    cd "$extracted_dir"
+    bash install.sh --local-install
+    
+    # Очистка
+    print_msg "$YELLOW" "Очистка временных файлов..."
+    rm -rf "$temp_dir"
+    
+    exit 0
+}
+
+# Определяем директорию, где находится скрипт
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Проверяем, не является ли это вызовом из удаленной установки с флагом --local-install
+if [[ "${1:-}" == "--local-install" ]]; then
+    shift
+    print_msg "$CYAN" "(Локальная установка из скачанного репозитория)"
+else
+    # Проверяем, запущен ли скрипт удаленно
+    if is_remote_install "$SCRIPT_DIR"; then
+        remote_install
+    fi
+fi
+
+# =================== ЛОКАЛЬНАЯ УСТАНОВКА ===================
 
 # Проверка прав root
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -50,7 +172,7 @@ print_msg "$YELLOW" "2. Копирование файлов..."
 if [[ "$SCRIPT_DIR" == "$INSTALL_DIR" ]]; then
     print_msg "$YELLOW" "Скрипт уже находится в директории установки. Пропускаем копирование."
 else
-    # Очищаем директорию установки перед копированием (кроме самого скрипта install.sh, если он там есть)
+    # Очищаем директорию установки перед копированием
     rm -rf "$INSTALL_DIR"/*
     cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
 fi
@@ -98,6 +220,7 @@ print_msg "$GREEN" "============================================"
 print_msg "$GREEN" "  Установка завершена успешно!"
 print_msg "$GREEN" "============================================"
 echo ""
+
 print_msg "$BLUE" "Как использовать:"
 print_msg "$CYAN" "  sudo server-setup"
 echo ""
