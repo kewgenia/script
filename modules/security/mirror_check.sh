@@ -249,32 +249,30 @@ _restore_backup() {
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
 
 show_mirror_check_menu() {
-    local menu_id="mirror_check"
-    
     enable_graceful_ctrlc
     while true; do
         menu_header "🌐 Управление зеркалами APT"
         printf_description "Настройка источников пакетов для вашей системы."
 
-        render_menu_items "$menu_id"
-
+        printf_menu_option "1" "Заменить на зеркала Yandex"
+        printf_menu_option "2" "Ввести зеркала вручную"
+        printf_menu_option "3" "Обновить списки пакетов"
+        printf_menu_option "4" "Восстановить из бэкапа"
+        printf_menu_option "5" "Показать текущие репозитории"
         printf_menu_option "b" "Назад в главное меню"
 
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
-        if [[ "$choice" == "b" || "$choice" == "B" ]]; then
-            break
-        fi
-
-        local action
-        action=$(get_menu_action "$menu_id" "$choice")
-        
-        if [[ -n "$action" ]]; then
-            eval "$action"
-        else
-            printf_error "Нет такого пункта." && sleep 1
-        fi
+        case "$choice" in
+            1) _replace_with_yandex_menu ;;
+            2) _manual_mirror_input ;;
+            3) _update_package_lists ;;
+            4) _restore_backup ;;
+            5) _show_repositories ;;
+            b|B) break ;;
+            *) printf_error "Нет такого пункта." && sleep 1 ;;
+        esac
     done
     disable_graceful_ctrlc
 }

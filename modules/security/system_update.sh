@@ -86,32 +86,32 @@ _full_system_update() {
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
 
 show_system_update_menu() {
-    local menu_id="system_update" 
-    
     enable_graceful_ctrlc
     while true; do
         menu_header "🔄 Обновление системы"
         printf_description "Выберите действие для обновления вашей системы Debian/Ubuntu."
 
-        render_menu_items "$menu_id"
-
+        printf_menu_option "1" "Обновить списки пакетов"
+        printf_menu_option "2" "Обновить установленные пакеты"
+        printf_menu_option "3" "Дистрибутивное обновление"
+        printf_menu_option "4" "Удалить ненужные пакеты"
+        printf_menu_option "5" "Очистить кэш пакетов"
+        printf_menu_option "6" "ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты)"
         printf_menu_option "b" "Назад в главное меню"
 
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
-        if [[ "$choice" == "b" || "$choice" == "B" ]]; then
-            break
-        fi
-
-        local action
-        action=$(get_menu_action "$menu_id" "$choice")
-        
-        if [[ -n "$action" ]]; then
-            eval "$action"
-        else
-            printf_error "Нет такого пункта." && sleep 1
-        fi
+        case "$choice" in
+            1) _update_package_lists ;;
+            2) _upgrade_packages ;;
+            3) _dist_upgrade ;;
+            4) _autoremove_packages ;;
+            5) _clean_cache ;;
+            6) _full_system_update ;;
+            b|B) break ;;
+            *) printf_error "Нет такого пункта." && sleep 1 ;;
+        esac
     done
     disable_graceful_ctrlc
 }
