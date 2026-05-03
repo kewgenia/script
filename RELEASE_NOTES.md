@@ -1,4 +1,4 @@
-# Server Setup - Релиз v2.0.1
+﻿# Server Setup - Релиз v2.0.1
 
 ## 🛡️ Описание
 

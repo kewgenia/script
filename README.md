@@ -1,4 +1,4 @@
-# 🛡️ Server Setup
+﻿# 🛡️ Server Setup
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)

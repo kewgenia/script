@@ -1,0 +1,17 @@
+﻿# Force Unix line endings for shell scripts
+*.sh text eol=lf
+
+# Ensure Unix line endings for all text files
+* text=auto eol=lf
+
+# Documents can use platform native, but prefer LF
+*.md text eol=lf
+*.txt text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.gif binary
+*.zip binary
+*.tar binary
+*.gz binary
