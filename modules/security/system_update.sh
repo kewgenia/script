@@ -7,10 +7,10 @@
 # @item( main | 1 | 🔄 Обновление системы | show_system_update_menu | 10 | 10 | Обновление пакетов Debian/Ubuntu )
 # @item( system_update | 1 | Обновить списки пакетов | _update_package_lists | 10 | 10 | apt-get update )
 # @item( system_update | 2 | Обновить установленные пакеты | _upgrade_packages | 20 | 10 | apt-get upgrade )
-# @item( system_update | 3 | Дистрибутивное обновление | _dist_upgrade | 30 | 10 | apt-get dist-upgrade )
-# @item( system_update | 4 | Удалить ненужные пакеты | _autoremove_packages | 40 | 10 | apt-get autoremove )
-# @item( system_update | 5 | Очистить кэш пакетов | _clean_cache | 50 | 10 | apt-get clean && autoclean )
-# @item( system_update | 6 | ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты) | _full_system_update | 60 | 20 | Выполнить все действия последовательно )
+# @item( system_update | 3 | Удалить ненужные пакеты | _autoremove_packages | 30 | 10 | apt-get autoremove )
+# @item( system_update | 4 | Очистить кэш пакетов | _clean_cache | 40 | 10 | apt-get clean && autoclean )
+# @item( system_update | 5 | Проверить необходимость перезагрузки | _check_reboot_required | 50 | 10 | Проверка /var/run/reboot-required )
+# @item( system_update | 6 | ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты) | _full_system_update | 60 | 20 | Выполнить пункты 1-4 + проверка перезагрузки )
 #
 [[ "${BASH_SOURCE[0]}" == "${0}" ]] && exit 1 # Защита от прямого запуска
 
@@ -23,7 +23,7 @@ _update_package_lists() {
     else
         err "Не удалось обновить списки пакетов."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _upgrade_packages() {
@@ -33,17 +33,23 @@ _upgrade_packages() {
     else
         err "Не удалось обновить пакеты."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
-_dist_upgrade() {
-    info "Выполнение дистрибутивного обновления..."
-    if run_cmd "apt-get dist-upgrade -y"; then
-        ok "Дистрибутивное обновление успешно завершено."
+_check_reboot_required() {
+    info "Проверка необходимости перезагрузки..."
+    if [[ -f /var/run/reboot-required ]]; then
+        warn "⚠️  ТРЕБУЕТСЯ ПЕРЕЗАГРУЗКА СИСТЕМЫ!"
+        if [[ -f /var/run/reboot-required.pkgs ]]; then
+            info "Пакеты, требующие перезагрузки:"
+            while IFS= read -r pkg; do
+                echo -e "  ${C_CYAN}- $pkg${C_RESET}"
+            done < /var/run/reboot-required.pkgs
+        fi
     else
-        warn "Дистрибутивное обновление завершилось с предупреждениями."
+        ok "Перезагрузка не требуется."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _autoremove_packages() {
@@ -53,7 +59,7 @@ _autoremove_packages() {
     else
         warn "Не удалось удалить некоторые пакеты."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _clean_cache() {
@@ -63,24 +69,24 @@ _clean_cache() {
     else
         warn "Не удалось очистить кэш."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _full_system_update() {
     if ! ask_yes_no "Вы уверены, что хотите выполнить ПОЛНОЕ обновление системы?"; then
         info "Отменено пользователем."
-        wait_for_enter
+        [[ $VERBOSE == true ]] && wait_for_enter
         return
     fi
     
     _update_package_lists
     _upgrade_packages
-    _dist_upgrade
     _autoremove_packages
     _clean_cache
+    _check_reboot_required
     
     ok "ПОЛНОЕ ОБНОВЛЕНИЕ СИСТЕМЫ ЗАВЕРШЕНО!"
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
@@ -90,24 +96,24 @@ show_system_update_menu() {
     while true; do
         menu_header "🔄 Обновление системы"
         printf_description "Выберите действие для обновления вашей системы Debian/Ubuntu."
-
+        
         printf_menu_option "1" "Обновить списки пакетов"
         printf_menu_option "2" "Обновить установленные пакеты"
-        printf_menu_option "3" "Дистрибутивное обновление"
-        printf_menu_option "4" "Удалить ненужные пакеты"
-        printf_menu_option "5" "Очистить кэш пакетов"
+        printf_menu_option "3" "Удалить ненужные пакеты"
+        printf_menu_option "4" "Очистить кэш пакетов"
+        printf_menu_option "5" "Проверить необходимость перезагрузки"
         printf_menu_option "6" "ПОЛНОЕ ОБНОВЛЕНИЕ (Все пункты)"
         printf_menu_option "b" "Назад в главное меню"
-
+        
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
         case "$choice" in
             1) _update_package_lists ;;
             2) _upgrade_packages ;;
-            3) _dist_upgrade ;;
-            4) _autoremove_packages ;;
-            5) _clean_cache ;;
+            3) _autoremove_packages ;;
+            4) _clean_cache ;;
+            5) _check_reboot_required ;;
             6) _full_system_update ;;
             b|B) break ;;
             *) printf_error "Нет такого пункта." && sleep 1 ;;

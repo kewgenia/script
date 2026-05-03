@@ -65,7 +65,7 @@ _show_repositories() {
     
     if [[ ! -s "$repo_list" ]]; then
         warn "Активные репозитории не найдены."
-        wait_for_enter
+        [[ $VERBOSE == true ]] && wait_for_enter
         return
     fi
     
@@ -78,7 +78,7 @@ _show_repositories() {
     done < "$repo_list"
     
     echo ""
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
     
     if [[ -f "$repo_list" ]]; then
         rm -f "$repo_list"
@@ -160,7 +160,7 @@ _replace_with_yandex_menu() {
     fi
     
     ok "Замена репозиториев завершена."
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _manual_mirror_input() {
@@ -192,7 +192,7 @@ _manual_mirror_input() {
     
     mv "$new_sources" /etc/apt/sources.list
     ok "Репозитории обновлены с пользовательским зеркалом."
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _update_package_lists() {
@@ -202,7 +202,7 @@ _update_package_lists() {
     else
         warn "Предупреждение при обновлении списков. Проверьте лог."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _restore_backup() {
@@ -212,7 +212,7 @@ _restore_backup() {
     
     if [[ -z "$backups" ]]; then
         warn "Резервные копии не найдены."
-        wait_for_enter
+        [[ $VERBOSE == true ]] && wait_for_enter
         return
     fi
     
@@ -243,7 +243,7 @@ _restore_backup() {
     else
         err "Неверный выбор."
     fi
-    wait_for_enter
+    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================
@@ -253,14 +253,14 @@ show_mirror_check_menu() {
     while true; do
         menu_header "🌐 Управление зеркалами APT"
         printf_description "Настройка источников пакетов для вашей системы."
-
+        
         printf_menu_option "1" "Заменить на зеркала Yandex"
         printf_menu_option "2" "Ввести зеркала вручную"
         printf_menu_option "3" "Обновить списки пакетов"
         printf_menu_option "4" "Восстановить из бэкапа"
         printf_menu_option "5" "Показать текущие репозитории"
         printf_menu_option "b" "Назад в главное меню"
-
+        
         local choice
         choice=$(safe_read "Ваш выбор: ") || break
         
