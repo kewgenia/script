@@ -72,6 +72,10 @@ sudo vps-security-setup
 
 ---
 
+## 📋 Журнал изменений
+
+Все изменения проекта документируются в файле [`CHANGELOG.md`](CHANGELOG.md), который ведется по стандарту [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
+
 ## 🛠️ Разработка и стандарты
 
 Проект придерживается строгих стандартов оформления кода (`docs/STYLE_GUIDE.md`):
