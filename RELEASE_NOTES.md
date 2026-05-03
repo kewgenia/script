@@ -1,4 +1,4 @@
-# Server Setup - Релиз v2.0
+# Server Setup - Релиз v2.0.1
 
 ## 🛡️ Описание
 
@@ -20,6 +20,26 @@
 *   Отключение ненужных системных служб.
 *   Настройка автоматических обновлений (unattended-upgrades).
 *   Дополнительные меры: 2FA, права доступа к конфигурационным файлам.
+
+## 🎉 Что нового в v2.0.1
+
+### Ребрендинг проекта
+Проект полностью переименован из "VPS Security Initial Setup" в **"Server Setup"**:
+*   Переименован главный скрипт: `vps-security-setup.sh` → `server-setup.sh`
+*   Обновлены пути установки: `/opt/server-setup`
+*   Новая команда запуска: `server-setup`
+*   Обновлен лог-файл: `/var/log/server-setup.log`
+*   Переименована документация: `docs/vps-security-initial-setup.md` → `docs/server-initial-setup.md`
+
+### Добавлено
+*   Файл инструкций `.instructions` для ассистента
+*   Журнал изменений `CHANGELOG.md`
+
+### Обновлено
+*   `README.md` с профессиональным оформлением
+*   Документация: `docs/GUIDE_MODULES.md`, `docs/STYLE_GUIDE.md`, `docs/Структура.md`
+*   Скрипт установки `install.sh` с новыми путями
+*   Модули: `modules/security/mirror_check.sh`, `modules/core/common.sh`
 
 ## 🚀 Установка и запуск
 

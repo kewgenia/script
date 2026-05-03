@@ -15,6 +15,24 @@
 - Настройка автоматических обновлений (unattended-upgrades)
 - Дополнительные меры: 2FA, права доступа к конфигурационным файлам
 
+## [2.0.1] - 2026-05-03
+
+### Добавлено
+- Файл инструкций `.instructions` для ассистента
+- Журнал изменений `CHANGELOG.md`
+
+### Изменено
+- **Ребрендинг проекта:** удаление "VPS" из названия и контекста
+  - Переименование `vps-security-setup.sh` → `server-setup.sh`
+  - Переименование `docs/vps-security-initial-setup.md` → `docs/server-initial-setup.md`
+  - Обновление путей установки: `/opt/server-setup`, команда `server-setup`
+  - Обновление лог-файла: `/var/log/server-setup.log`
+- Обновление `README.md` с профессиональным оформлением
+- Обновление `RELEASE_NOTES.md` для версии v2.0
+- Обновление `install.sh` с новыми путями и описанием
+- Обновление документации: `docs/GUIDE_MODULES.md`, `docs/STYLE_GUIDE.md`, `docs/Структура.md`
+- Обновление модулей: `modules/security/mirror_check.sh`, `modules/core/common.sh`
+
 ## [2.0.0] - 2026-05-02
 
 ### Добавлено
