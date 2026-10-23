@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: ЗАЩИТА (FAIL2BAN/CROWDSEC)    == #
 # ============================================================ #
 # Настройка Fail2Ban или CrowdSec для защиты от брутфорса.
-# Версия: 1.0.0
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 5 | 🛡️ Защита (Fail2Ban/CrowdSec) | show_intrusion_prevention_menu | 50 | 50 | Защита от брутфорса )
+# @item( main | 5 | 🛡️ Защита (Fail2Ban/CrowdSec) | show_intrusion_prevention_menu | 50 | 10 | Защита от брутфорса )
 # @item( intrusion_prevention | 1 | Настроить Fail2Ban | _configure_fail2ban | 10 | 10 | Классическая защита )
 # @item( intrusion_prevention | 2 | Настроить CrowdSec | _configure_crowdsec | 20 | 10 | Современная защита )
 #
@@ -31,8 +31,7 @@ _validate_ip_or_cidr() {
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
 _configure_fail2ban() {
-    local section="Настройка Fail2Ban"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка Fail2Ban"
     
     # Установка Fail2Ban
     if ! dpkg -l fail2ban 2>/dev/null | grep -q ^ii; then
@@ -54,7 +53,7 @@ _configure_fail2ban() {
         detected_ip=$(echo "$SSH_CONNECTION" | awk '{print $1}')
     fi
     if [[ -z "$detected_ip" ]]; then
-        detected_ip=$(who -m 2>/dev/null | awk '{print $NF}' | tr -d '()')
+        detected_ip=$(who -m 2>/dev/null | awk '{print $NF}' | tr -d '()' || true)
     fi
     if [[ -n "$detected_ip" ]] && _validate_ip_or_cidr "$detected_ip"; then
         info "Обнаружен IP текущего подключения: $detected_ip"
@@ -99,6 +98,26 @@ failregex = \[UFW BLOCK\] IN=.* OUT=.* SRC=<HOST>
 ignoreregex =
 EOF
     
+    # Debian 12+/Ubuntu 24.04 без rsyslog пишут логи SSH только в journald
+    local sshd_backend_line=""
+    if [[ ! -f /var/log/auth.log ]]; then
+        sshd_backend_line="backend = systemd"
+        if ! dpkg -l python3-systemd 2>/dev/null | grep -q ^ii; then
+            run_cmd "apt-get install -y python3-systemd" || warn "Не удалось установить python3-systemd."
+        fi
+        info "Логи SSH читаются из journald (backend = systemd)."
+    fi
+    
+    # Блокировка через UFW, если он установлен, иначе — стандартный banaction
+    local banaction_line=""
+    if command -v ufw >/dev/null 2>&1; then
+        banaction_line="banaction = ufw"
+    fi
+    
+    if [[ -f "$jail_local" ]]; then
+        cp "$jail_local" "${jail_local}.backup_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
     # jail.local
     local ignore_ip_str="${ignore_ips[*]}"
     cat > "$jail_local" <<EOF
@@ -107,30 +126,42 @@ ignoreip = $ignore_ip_str
 bantime = 1d
 findtime = 10m
 maxretry = 5
-banaction = ufw
+$banaction_line
 
 [sshd]
 enabled = true
-port = ${NEW_SSH_PORT:-22}
-
-[ufw-probes]
-enabled = true
-port = all
-filter = ufw-probes
-logpath = /var/log/ufw.log
-maxretry = 3
+port = $(get_ssh_port)
+$sshd_backend_line
 EOF
     
-    # Создание лог-файла если нет
-    if [[ ! -f /var/log/ufw.log ]]; then
-        touch /var/log/ufw.log
-        log "Создан /var/log/ufw.log для Fail2Ban."
+    # Jail для сканеров портов имеет смысл только вместе с UFW
+    if command -v ufw >/dev/null 2>&1; then
+        {
+            echo ""
+            echo "[ufw-probes]"
+            echo "enabled = true"
+            echo "port = all"
+            echo "filter = ufw-probes"
+            echo "maxretry = 3"
+            if [[ -n "$sshd_backend_line" ]]; then
+                # Без rsyslog сообщения UFW (ядра) есть только в journald
+                echo "backend = systemd"
+                echo "journalmatch = _TRANSPORT=kernel"
+            else
+                echo "logpath = /var/log/ufw.log"
+            fi
+        } >> "$jail_local"
+        
+        if [[ -z "$sshd_backend_line" && ! -f /var/log/ufw.log ]]; then
+            touch /var/log/ufw.log
+            log "Создан /var/log/ufw.log для Fail2Ban."
+        fi
     fi
     
     # Перезапуск
     info "Перезапуск Fail2Ban..."
-    systemctl enable fail2ban
-    if systemctl restart fail2ban; then
+    systemctl enable fail2ban >/dev/null 2>&1
+    if systemctl restart fail2ban && sleep 2 && systemctl is-active --quiet fail2ban; then
         ok "Fail2Ban активирован и настроен."
         fail2ban-client status 2>&1 | tee -a "$LOG_FILE"
     else
@@ -142,13 +173,12 @@ EOF
 }
 
 _configure_crowdsec() {
-    local section="Настройка CrowdSec"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка CrowdSec"
     
     # Установка CrowdSec
     if ! command -v crowdsec >/dev/null 2>&1; then
         info "Настройка репозитория CrowdSec..."
-        if ! curl -s https://install.crowdsec.net | sh >> "$LOG_FILE" 2>&1; then
+        if ! curl -fsSL https://install.crowdsec.net | sh >> "$LOG_FILE" 2>&1; then
             err "Не удалось настроить репозиторий CrowdSec."
             return 1
         fi
@@ -231,7 +261,7 @@ show_intrusion_prevention_menu() {
             1) _configure_fail2ban ;;
             2) _configure_crowdsec ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

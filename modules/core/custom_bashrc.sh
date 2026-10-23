@@ -8,7 +8,7 @@
 #
 # @menu.manifest
 #
-# @item( main | 12 | 🎨 Кастомизация .bashrc | show_custom_bashrc_menu | 120 | 120 | Установка кастомного .bashrc )
+# @item( main | 12 | 🎨 Кастомизация .bashrc | show_custom_bashrc_menu | 120 | 20 | Установка кастомного .bashrc )
 # @item( custom_bashrc | 1 | Установить кастомный .bashrc | _install_custom_bashrc | 10 | 10 | Замена .bashrc пользователя )
 # @item( custom_bashrc | 2 | Показать содержимое .bashrc | _show_bashrc | 20 | 10 | Просмотр текущего .bashrc )
 #
@@ -404,7 +404,7 @@ show_custom_bashrc_menu() {
             1) _install_custom_bashrc ;;
             2) _show_bashrc ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

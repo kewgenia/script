@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ          == #
 # ============================================================ #
 # Создание пользователей, настройка SSH-ключей и sudo-прав.
-# Версия: 1.0.0
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 2 | 👤 Управление пользователями | show_user_management_menu | 20 | 20 | Создание и настройка пользователей )
+# @item( main | 2 | 👤 Управление пользователями | show_user_management_menu | 20 | 10 | Создание и настройка пользователей )
 # @item( user_management | 1 | Создать нового пользователя | _create_user | 10 | 10 | Настройка нового пользователя с SSH-ключами )
 # @item( user_management | 2 | Настроить SSH-ключи | _setup_ssh_keys_menu | 20 | 10 | Добавление SSH-ключей для пользователя )
 # @item( user_management | 3 | Управление sudo-правами | _manage_sudo | 30 | 10 | Добавление/удаление из группы sudo )
@@ -20,11 +20,22 @@
 
 _validate_ssh_key() {
     local key="$1"
-    if [[ "$key" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
-        return 0
-    else
-        return 1
+    [[ -n "$key" ]] || return 1
+    # ssh-keygen проверяет формат ключа полностью (rsa, ed25519, ecdsa, sk-*)
+    if command -v ssh-keygen >/dev/null 2>&1; then
+        ssh-keygen -l -f /dev/stdin <<< "$key" >/dev/null 2>&1
+        return $?
     fi
+    [[ "$key" =~ ^(ssh-(rsa|ed25519)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)[[:space:]] ]]
+}
+
+# Гарантирует наличие группы sudo (на минимальном Debian пакет sudo может отсутствовать)
+_ensure_sudo_installed() {
+    if command -v sudo >/dev/null 2>&1 && getent group sudo >/dev/null 2>&1; then
+        return 0
+    fi
+    info "Пакет sudo не установлен. Установка..."
+    run_cmd "apt-get install -y sudo"
 }
 
 _setup_ssh_keys_for_user() {
@@ -51,7 +62,8 @@ _setup_ssh_keys_for_user() {
             
             echo "$ssh_key" >> "$auth_keys"
             # Удаление дубликатов
-            awk '!seen[$0]++' "$auth_keys" > "$auth_keys.tmp" && mv "$auth_keys.tmp" "$auth_keys"
+            awk '!seen[$0]++' "$auth_keys" > "$auth_keys.tmp" && cat "$auth_keys.tmp" > "$auth_keys"
+            rm -f "$auth_keys.tmp"
             
             chmod 600 "$auth_keys"
             chown "$username:$username" "$auth_keys"
@@ -59,7 +71,7 @@ _setup_ssh_keys_for_user() {
             ok "SSH-ключ добавлен для '$username'."
             log "Добавлен SSH-ключ для пользователя '$username'."
         else
-            warn "Неверный формат SSH-ключа. Ключ должен начинаться с 'ssh-rsa', 'ssh-ed25519' или 'ecdsa-*'."
+            warn "Неверный формат SSH-ключа. Вставьте публичный ключ целиком (ssh-ed25519 AAAA... comment)."
         fi
         
         if ! ask_yes_no "Добавить еще один SSH-ключ?" "n"; then
@@ -102,12 +114,12 @@ _generate_ssh_keys_for_user() {
 }
 
 _create_user() {
-    local username password pass1 pass2
+    local username pass1 pass2
     
     read -rp "$(printf '%s' "${CYAN}Введите имя пользователя: ${NC}")" username
     
-    if [[ -z "$username" ]]; then
-        err "Имя пользователя не может быть пустым."
+    if ! is_valid_username "$username"; then
+        err "Некорректное имя пользователя (строчные латинские буквы, цифры, '_' и '-', до 32 символов)."
         return 1
     fi
     
@@ -147,10 +159,11 @@ _create_user() {
             warn "Пароль пропущен. Используется только SSH-аутентификация."
             if ask_yes_no "Сгенерировать случайный пароль?" "y"; then
                 local rand_pass
-                rand_pass=$(head /dev/urandom | tr -dc A-Za-z0-9 | head -c 24)
+                rand_pass=$(tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24)
                 if echo "$username:$rand_pass" | chpasswd >/dev/null 2>&1; then
                     ok "Сгенерирован случайный пароль."
-                    warn "СОХРАНИТЕ ЭТОТ ПАРОЛЬ: $rand_pass"
+                    # Пароль выводится только на экран, не в лог
+                    printf '%s\n' "${YELLOW}СОХРАНИТЕ ЭТОТ ПАРОЛЬ: ${BOLD}${rand_pass}${NC}"
                     log "Сгенерирован пароль для '$username'."
                     break
                 fi
@@ -175,7 +188,7 @@ _create_user() {
     
     # Добавление в группу sudo
     if ask_yes_no "Добавить пользователя '$username' в группу sudo?" "y"; then
-        if usermod -aG sudo "$username"; then
+        if _ensure_sudo_installed && usermod -aG sudo "$username"; then
             ok "Пользователь '$username' добавлен в группу sudo."
             log "Пользователь '$username' добавлен в sudo."
         else
@@ -224,7 +237,7 @@ _manage_sudo() {
         return 1
     fi
     
-    if groups "$username" | grep -qw sudo; then
+    if id -nG "$username" | grep -qw sudo; then
         info "Пользователь '$username' уже в группе sudo."
         if ask_yes_no "Удалить из группы sudo?" "n"; then
             if gpasswd -d "$username" sudo; then
@@ -236,7 +249,7 @@ _manage_sudo() {
     else
         info "Пользователь '$username' не в группе sudo."
         if ask_yes_no "Добавить в группу sudo?" "y"; then
-            if usermod -aG sudo "$username"; then
+            if _ensure_sudo_installed && usermod -aG sudo "$username"; then
                 ok "Пользователь '$username' добавлен в группу sudo."
             else
                 err "Не удалось добавить в группу sudo."
@@ -269,7 +282,7 @@ show_user_management_menu() {
             2) _setup_ssh_keys_menu ;;
             3) _manage_sudo ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

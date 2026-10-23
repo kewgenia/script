@@ -125,7 +125,7 @@ show_system_update_menu() {
         if [[ -n "$action" ]]; then
             eval "$action"
         else
-            err "Нет такого пункта." && sleep 1
+            err "Нет такого пункта."
         fi
     done
     disable_graceful_ctrlc

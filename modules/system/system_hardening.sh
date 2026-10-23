@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: НАСТРОЙКА СИСТЕМЫ И ЯДРА       == #
 # ============================================================ #
 # Жесткие настройки ядра (sysctl), часового пояса, локали, имени хоста.
-# Версия: 1.0.0
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 7 | ⚙️ Система и Ядро | show_system_hardening_menu | 70 | 70 | Настройка ядра и системы )
+# @item( main | 7 | ⚙️ Система и Ядро | show_system_hardening_menu | 70 | 10 | Настройка ядра и системы )
 # @item( system_hardening | 1 | Настроить часовой пояс | _configure_timezone | 10 | 10 | timedatectl set-timezone )
 # @item( system_hardening | 2 | Настроить локаль | _configure_locale | 20 | 10 | dpkg-reconfigure locales )
 # @item( system_hardening | 3 | Настроить имя хоста | _configure_hostname | 30 | 10 | hostnamectl set-hostname )
@@ -31,15 +31,15 @@ _validate_timezone() {
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
 _configure_timezone() {
-    local section="Настройка часового пояса"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка часового пояса"
     
     local current_tz
-    current_tz=$(timedatectl status 2>/dev/null | grep "Time zone" | awk '{print $3}')
+    current_tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
     info "Текущий часовой пояс: ${current_tz:-не определен}"
     
-    read -rp "$(printf '%s' "${CYAN}Введите часовой пояс (например, Europe/Moscow): ${NC}")" timezone
-    timezone=${timezone:-"Etc/UTC"}
+    local timezone
+    read -rp "$(printf '%s' "${CYAN}Введите часовой пояс (например, Europe/Moscow) [${current_tz:-Etc/UTC}]: ${NC}")" timezone
+    timezone=${timezone:-${current_tz:-Etc/UTC}}
     
     if ! _validate_timezone "$timezone"; then
         err "Неверный часовой пояс. Просмотрите список: timedatectl list-timezones"
@@ -62,19 +62,17 @@ _configure_timezone() {
 }
 
 _configure_locale() {
-    local section="Настройка локали"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка локали"
     
     if ask_yes_no "Настроить системные локали интерактивно?" "y"; then
-        if run_cmd "dpkg-reconfigure locales"; then
+        if ! dpkg -l locales 2>/dev/null | grep -q ^ii; then
+            run_cmd "apt-get install -y locales" || { err "Не удалось установить пакет locales."; return 1; }
+        fi
+        # Диалог интерактивный — запускаем напрямую, а не через run_cmd (он пишет вывод в лог)
+        if dpkg-reconfigure locales; then
             ok "Локали настроены."
-            # Применение к текущей сессии
-            if [[ -f /etc/default/locale ]]; then
-                . /etc/default/locale
-                export $(grep -v '^#' /etc/default/locale | cut -d= -f1)
-                ok "Переменные локали обновлены в текущей сессии."
-                log "Sourced /etc/default/locale to update script's environment."
-            fi
+            log "Locales reconfigured."
+            info "Новая локаль применится при следующем входе в систему."
         else
             warn "Не удалось перенастроить локали."
         fi
@@ -86,28 +84,36 @@ _configure_locale() {
 }
 
 _configure_hostname() {
-    local section="Настройка имени хоста"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка имени хоста"
     
     local current_hostname
     current_hostname=$(hostname 2>/dev/null || echo "unknown")
     info "Текущее имя хоста: $current_hostname"
     
+    local new_hostname
     read -rp "$(printf '%s' "${CYAN}Введите имя хоста: ${NC}")" new_hostname
     if [[ -z "$new_hostname" ]]; then
         warn "Имя хоста не может быть пустым. Используется текущее."
         return 0
+    fi
+    # RFC 1123: метки из букв, цифр и '-', не начинаются/заканчиваются '-'
+    if [[ ! "$new_hostname" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]] || (( ${#new_hostname} > 253 )); then
+        err "Некорректное имя хоста."
+        return 1
     fi
     
     if [[ "$current_hostname" != "$new_hostname" ]]; then
         if run_cmd "hostnamectl set-hostname $new_hostname"; then
             ok "Имя хоста изменено на: $new_hostname"
             # Обновление /etc/hosts
-            if ! grep -q "^127.0.1.1" /etc/hosts; then
-                echo "127.0.1.1 $new_hostname" >> /etc/hosts
+            # Короткое имя добавляется как алиас для FQDN
+            local hosts_entry="$new_hostname"
+            [[ "$new_hostname" == *.* ]] && hosts_entry="$new_hostname ${new_hostname%%.*}"
+            if ! grep -q "^127\.0\.1\.1" /etc/hosts; then
+                echo "127.0.1.1 $hosts_entry" >> /etc/hosts
                 ok "Добавлена запись в /etc/hosts"
             else
-                sed -i "s/^127.0.1.1.*/127.0.1.1\t$new_hostname/" /etc/hosts
+                sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t$hosts_entry/" /etc/hosts
                 ok "Обновлена запись в /etc/hosts"
             fi
             log "Hostname set to $new_hostname."
@@ -123,8 +129,7 @@ _configure_hostname() {
 }
 
 _configure_kernel_hardening() {
-    local section="Жесткие настройки ядра (sysctl)"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Жесткие настройки ядра (sysctl)"
     
     if ! ask_yes_no "Применить рекомендуемые настройки безопасности ядра (sysctl)?" "y"; then
         info "Пропуск настройки ядра."
@@ -151,8 +156,14 @@ net.ipv4.tcp_syncookies=1
 # Игнорирование ICMP перенаправлений
 net.ipv4.conf.all.accept_redirects=0
 net.ipv4.conf.default.accept_redirects=0
-net.ipv4.conf.all.secure_redirects=1
-net.ipv4.conf.default.secure_redirects=1
+net.ipv4.conf.all.secure_redirects=0
+net.ipv4.conf.default.secure_redirects=0
+# Не отправлять ICMP перенаправления (сервер не маршрутизатор)
+net.ipv4.conf.all.send_redirects=0
+net.ipv4.conf.default.send_redirects=0
+# Игнорирование широковещательных ping и ложных ICMP ошибок
+net.ipv4.icmp_echo_ignore_broadcasts=1
+net.ipv4.icmp_ignore_bogus_error_responses=1
 # Игнорирование source-routed пакетов
 net.ipv4.conf.all.accept_source_route=0
 net.ipv4.conf.default.accept_source_route=0
@@ -195,13 +206,15 @@ EOF
     chmod 644 "$sysctl_config"
     
     info "Загрузка новых настроек..."
-    if sysctl -p "$sysctl_config" >/dev/null 2>&1; then
+    # -e: пропускать параметры, отсутствующие в ядре (например, yama в контейнерах)
+    local sysctl_out
+    if sysctl_out=$(sysctl -e -p "$sysctl_config" 2>&1); then
         ok "Настройки ядра успешно применены."
         log "Applied kernel hardening settings."
     else
-        err "Не удалось применить настройки. Проверьте совместимость ядра."
-        log "sysctl -p failed for kernel hardening config."
-        return 1
+        warn "Часть параметров не применена (возможно, контейнер или старое ядро):"
+        grep -i "error\|denied\|read-only" <<< "$sysctl_out" | head -n 10
+        log "sysctl -p partially failed: $sysctl_out"
     fi
     
     [[ $VERBOSE == true ]] && wait_for_enter
@@ -231,7 +244,7 @@ show_system_hardening_menu() {
             3) _configure_hostname ;;
             4) _configure_kernel_hardening ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

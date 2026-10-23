@@ -10,7 +10,6 @@ set -euo pipefail
 
 # Конфигурация репозитория
 REPO_URL="https://github.com/kewgenia/script"
-RAW_BASE_URL="https://raw.githubusercontent.com/kewgenia/script/main"
 ARCHIVE_URL="https://github.com/kewgenia/script/archive/refs/heads/main.tar.gz"
 
 # Цвета для вывода
@@ -50,15 +49,14 @@ download_file() {
     fi
 }
 
-# Определяем, запущен ли скрипт удаленно (через curl | bash)
+# Определяем, запущен ли скрипт удаленно (curl | bash или bash <(curl ...))
 # Проверяем несколько условий:
-# 1. Скрипт запущен из stdin (pipe)
+# 1. Скрипт читается не из обычного файла (pipe или process substitution)
 # 2. Директория скрипта не содержит ожидаемую структуру (нет server-setup.sh)
 is_remote_install() {
     local script_dir="$1"
     
-    # Проверка на pipe (stdin не терминал)
-    if [[ ! -t 0 ]]; then
+    if [[ -z "${BASH_SOURCE[0]:-}" || ! -f "${BASH_SOURCE[0]}" ]]; then
         return 0
     fi
     
@@ -84,9 +82,11 @@ remote_install() {
         exit 1
     fi
     
-    # Создаем временную директорию
+    # Создаем временную директорию (удаляется при любом выходе)
     local temp_dir
     temp_dir=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$temp_dir'" EXIT
     print_msg "$YELLOW" "Создана временная директория: $temp_dir"
     
     # Скачиваем архив репозитория
@@ -122,17 +122,17 @@ remote_install() {
     # Запускаем локальную установку из распакованной директории
     print_msg "$YELLOW" "Запуск локальной установки..."
     cd "$extracted_dir"
-    bash install.sh --local-install
+    local rc=0
+    bash install.sh --local-install || rc=$?
+    cd /
     
-    # Очистка
+    # Очистка выполняется через trap EXIT
     print_msg "$YELLOW" "Очистка временных файлов..."
-    rm -rf "$temp_dir"
-    
-    exit 0
+    exit "$rc"
 }
 
 # Определяем директорию, где находится скрипт
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" && pwd)"
 
 # Проверяем, не является ли это вызовом из удаленной установки с флагом --local-install
 if [[ "${1:-}" == "--local-install" ]]; then
@@ -173,7 +173,7 @@ if [[ "$SCRIPT_DIR" == "$INSTALL_DIR" ]]; then
     print_msg "$YELLOW" "Скрипт уже находится в директории установки. Пропускаем копирование."
 else
     # Очищаем директорию установки перед копированием
-    rm -rf "$INSTALL_DIR"/*
+    rm -rf "${INSTALL_DIR:?}"/*
     cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
 fi
 
@@ -203,9 +203,11 @@ fi
 print_msg "$YELLOW" "5. Проверка зависимостей..."
 MISSING_DEPS=()
 
-if ! command -v bash &> /dev/null; then
-    MISSING_DEPS+=("bash")
-fi
+for dep in systemctl ss awk sed; do
+    if ! command -v "$dep" &> /dev/null; then
+        MISSING_DEPS+=("$dep")
+    fi
+done
 
 if ! command -v apt-get &> /dev/null; then
     print_msg "$YELLOW" "Внимание: apt-get не найден. Этот скрипт предназначен для Debian/Ubuntu."
