@@ -54,6 +54,35 @@ _validate_port_format() {
 
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
+# Включение UFW: порт SSH (и дополнительные порты-аргументы) разрешаются ДО
+# включения, иначе текущее подключение будет потеряно.
+# shellcheck disable=SC2120 # аргументы передает модуль auto_setup.sh
+_ufw_enable() {
+    local ssh_port port
+    ssh_port=$(get_ssh_port)
+    info "Порт SSH: $ssh_port — он будет разрешен."
+    if ! run_cmd "ufw allow $ssh_port/tcp comment 'SSH'"; then
+        err "Не удалось разрешить порт SSH. UFW не будет включен."
+        return 1
+    fi
+    for port in "$@"; do
+        if _validate_port_format "$port"; then
+            run_cmd "ufw allow $port" && ok "Порт $port разрешен."
+        else
+            warn "Пропущен неверный порт: $port"
+        fi
+    done
+    # Устанавливаем дефолтные политики
+    run_cmd "ufw default deny incoming"
+    run_cmd "ufw default allow outgoing"
+    if run_cmd "ufw --force enable"; then
+        ok "UFW включен."
+        return 0
+    fi
+    err "Не удалось включить UFW."
+    return 1
+}
+
 _toggle_ufw() {
     _ensure_ufw_installed || return 1
     if _ufw_is_active; then
@@ -68,22 +97,7 @@ _toggle_ufw() {
     else
         info "UFW не активен."
         if ask_yes_no "Включить UFW?" "y"; then
-            # Разрешаем фактический порт SSH ДО включения, иначе потеряем доступ
-            local ssh_port
-            ssh_port=$(get_ssh_port)
-            info "Порт SSH: $ssh_port — он будет разрешен."
-            if ! run_cmd "ufw allow $ssh_port/tcp comment 'SSH'"; then
-                err "Не удалось разрешить порт SSH. UFW не будет включен."
-                return 1
-            fi
-            # Устанавливаем дефолтные политики
-            run_cmd "ufw default deny incoming"
-            run_cmd "ufw default allow outgoing"
-            if run_cmd "ufw --force enable"; then
-                ok "UFW включен."
-            else
-                err "Не удалось включить UFW."
-            fi
+            _ufw_enable
         fi
     fi
     [[ $VERBOSE == true ]] && wait_for_enter

@@ -3,10 +3,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)
 ![Shell: Bash](https://img.shields.io/badge/Shell-Bash-green.svg)
+[![CI](https://github.com/kewgenia/script/actions/workflows/ci.yml/badge.svg)](https://github.com/kewgenia/script/actions/workflows/ci.yml)
 
 **Модульный инструмент для первоначальной настройки, установки ПО и администрирования серверов под управлением Debian/Ubuntu.**
 
-Проект предоставляет интерактивное меню для автоматизации рутинных задач по настройке и администрированию сервера, следуя лучшим практикам информационной безопасности.
+Проект предоставляет интерактивное меню и режим автоматической настройки по файлу конфигурации (`--auto`) для рутинных задач по настройке и администрированию сервера, следуя лучшим практикам информационной безопасности.
 
 ---
 
@@ -29,12 +30,12 @@
 | **🎨 Кастомизация .bashrc** | Установка кастомного .bashrc с полезными алиасами. |
 | **🔄 Обновление системы** | Полный цикл: `apt update`, `upgrade`, `autoremove`, очистка кэша. |
 | **🌐 Зеркала APT** | Быстрая замена на Yandex Mirror, ручная настройка, бэкапы. |
+| **🤖 Автонастройка (`--auto`)** | Первоначальная настройка сервера одной командой по `config/server.conf`. |
 
 ### 🔜 В планах развития
 
 *   Создание пользовательского дашборда (dashboard)
 *   Плагины для виджетов дашборда
-*   Расширение системы конфигурации (`config/server.conf`)
 *   Дополнительные инструменты мониторинга
 
 ---
@@ -65,14 +66,27 @@ sudo ./install.sh
 После установки команда `server-setup` будет доступна из любого места:
 
 ```bash
-sudo server-setup
+sudo server-setup                 # интерактивное меню
 ```
+
+### Автоматическая настройка
+
+```bash
+cd /opt/server-setup
+sudo cp config/server.conf.example config/server.conf
+sudo chmod 600 config/server.conf
+sudo nano config/server.conf      # пользователь, SSH-ключ, порт, часовой пояс…
+sudo server-setup --auto --check  # проверка конфигурации и план без изменений
+sudo server-setup --auto          # настройка
+```
+
+Подробнее — в [инструкции по работе с VPS](docs/VPS_GUIDE.md#33-вариант-а-автоматическая-настройка---auto).
 
 ---
 
 ## 📋 Требования
 
-*   **ОС:** Debian 12+ или Ubuntu 20.04+
+*   **ОС:** Debian 11+ или Ubuntu 20.04+
 *   **Права:** Доступ к root (через `sudo`)
 *   **Сеть:** Интернет-соединение для установки пакетов
 
@@ -83,7 +97,16 @@ sudo server-setup
 *   **[Руководство по стилю кода](docs/STYLE_GUIDE.md)** — стандарты оформления
 *   **[Гайд по модулям](docs/GUIDE_MODULES.md)** — как создавать модули
 *   **[Структура проекта](docs/Структура.md)** — описание архитектуры
-*   **[Первоначальная настройка](docs/server-initial-setup.md)** — руководство пользователя
+*   **[Работа с удалённым VPS](docs/VPS_GUIDE.md)** — Claude Code с Remote Control, VS Code Remote-SSH, первоначальная настройка сервера
+
+### Тесты
+
+```bash
+bash tests/run_tests.sh
+shellcheck -x -S warning server-setup.sh install.sh modules/*/*.sh tests/*.sh
+```
+
+Те же проверки и smoke-тесты на Debian 12 и Ubuntu 24.04 запускаются в GitHub Actions для каждого pull request.
 
 ---
 

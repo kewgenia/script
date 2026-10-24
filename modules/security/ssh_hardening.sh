@@ -108,9 +108,8 @@ _remove_legacy_service_override() {
 
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
-_configure_ssh() {
-    print_section "Настройка SSH"
-
+# Установка openssh-server (при необходимости), определение сервиса и порта
+_ssh_prepare() {
     if ! dpkg -l openssh-server 2>/dev/null | grep -q ^ii; then
         if ask_yes_no "openssh-server не установлен. Установить?" "y"; then
             if run_cmd "apt-get install -y openssh-server"; then
@@ -121,7 +120,7 @@ _configure_ssh() {
             fi
         else
             info "Пропуск настройки SSH."
-            return 0
+            return 1
         fi
     fi
 
@@ -130,6 +129,11 @@ _configure_ssh() {
     fi
     CURRENT_SSH_PORT=$(get_ssh_port)
     info "Текущий порт SSH: $CURRENT_SSH_PORT"
+}
+
+_configure_ssh() {
+    print_section "Настройка SSH"
+    _ssh_prepare || return 1
 
     # --- Защита от потери доступа ---
     local key_users
@@ -158,9 +162,18 @@ _configure_ssh() {
 
     local input_port
     input_port=$(safe_read "Введите новый порт SSH (текущий: $CURRENT_SSH_PORT): ") || return 1
-    NEW_SSH_PORT="${input_port:-$CURRENT_SSH_PORT}"
+    _apply_ssh_hardening "${input_port:-$CURRENT_SSH_PORT}" "$permit_root" "$password_auth" || return 1
+    [[ $VERBOSE == true ]] && wait_for_enter
+}
+
+# Применение настроек SSH с проверкой и автоматическим откатом.
+# Аргументы: порт, PermitRootLogin, PasswordAuthentication.
+# Требует предварительного вызова _ssh_prepare.
+_apply_ssh_hardening() {
+    local permit_root="$2" password_auth="$3"
+    NEW_SSH_PORT="$1"
     if ! [[ "$NEW_SSH_PORT" =~ ^[0-9]+$ ]] || (( NEW_SSH_PORT < 1 || NEW_SSH_PORT > 65535 )); then
-        err "Неверный номер порта."
+        err "Неверный номер порта: $NEW_SSH_PORT"
         return 1
     fi
     if [[ "$NEW_SSH_PORT" != "$CURRENT_SSH_PORT" ]] && is_port_listening "$NEW_SSH_PORT"; then
@@ -240,7 +253,8 @@ EOF
 
     warn "НЕ ЗАКРЫВАЙТЕ текущую сессию! Проверьте подключение в ОТДЕЛЬНОМ терминале:"
     info "  ssh -p $NEW_SSH_PORT <пользователь>@<сервер>"
-    if ! ask_yes_no "Подключение по новым настройкам работает?" "n"; then
+    # В авторежиме подтвердить вход некому: остаются проверки sshd -t и прослушивания порта
+    if [[ "$AUTO_MODE" != "true" ]] && ! ask_yes_no "Подключение по новым настройкам работает?" "n"; then
         _rollback_ssh
         return 1
     fi
@@ -260,7 +274,6 @@ EOF
     fi
 
     log "SSH hardened: port=$NEW_SSH_PORT root=$permit_root password=$password_auth"
-    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _configure_2fa() {

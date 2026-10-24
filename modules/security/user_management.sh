@@ -38,13 +38,68 @@ _ensure_sudo_installed() {
     run_cmd "apt-get install -y sudo"
 }
 
-_setup_ssh_keys_for_user() {
-    local username="$1"
-    local user_home ssh_dir auth_keys
-    
+# Добавляет публичный ключ в authorized_keys пользователя (без дубликатов)
+_add_ssh_key_to_user() {
+    local username="$1" ssh_key="$2"
+    local user_home ssh_dir auth_keys group
     user_home=$(getent passwd "$username" | cut -d: -f6)
+    group=$(id -gn "$username")
     ssh_dir="$user_home/.ssh"
     auth_keys="$ssh_dir/authorized_keys"
+    
+    mkdir -p "$ssh_dir"
+    chmod 700 "$ssh_dir"
+    chown "$username:$group" "$ssh_dir"
+    
+    echo "$ssh_key" >> "$auth_keys"
+    # Удаление дубликатов
+    awk '!seen[$0]++' "$auth_keys" > "$auth_keys.tmp" && cat "$auth_keys.tmp" > "$auth_keys"
+    rm -f "$auth_keys.tmp"
+    
+    chmod 600 "$auth_keys"
+    chown "$username:$group" "$auth_keys"
+    
+    ok "SSH-ключ добавлен для '$username'."
+    log "Добавлен SSH-ключ для пользователя '$username'."
+}
+
+# Создает пользователя без пароля (вход по ключу); код 1 при ошибке
+_create_user_account() {
+    local username="$1"
+    info "Создание пользователя '$username'..."
+    
+    local -a adduser_opts=("--disabled-password" "--gecos" "")
+    
+    # Проверка существования группы
+    if getent group "$username" >/dev/null 2>&1; then
+        warn "Группа '$username' уже существует. Добавляем пользователя в эту группу."
+        adduser_opts+=("--ingroup" "$username")
+    fi
+    
+    if ! adduser "${adduser_opts[@]}" "$username" >> "$LOG_FILE" 2>&1; then
+        err "Не удалось создать пользователя '$username'."
+        return 1
+    fi
+    ok "Пользователь '$username' создан."
+}
+
+_add_user_to_sudo() {
+    local username="$1"
+    if _ensure_sudo_installed && usermod -aG sudo "$username"; then
+        ok "Пользователь '$username' добавлен в группу sudo."
+        log "Пользователь '$username' добавлен в sudo."
+        return 0
+    fi
+    err "Не удалось добавить в группу sudo."
+    return 1
+}
+
+_generate_password() {
+    tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24
+}
+
+_setup_ssh_keys_for_user() {
+    local username="$1"
     
     if ! ask_yes_no "Добавить SSH-ключи для '$username'?"; then
         info "Пропуск добавления SSH-ключей."
@@ -56,20 +111,7 @@ _setup_ssh_keys_for_user() {
         read -rp "$(printf '%s' "${CYAN}Вставьте ваш публичный SSH-ключ: ${NC}")" ssh_key
         
         if _validate_ssh_key "$ssh_key"; then
-            mkdir -p "$ssh_dir"
-            chmod 700 "$ssh_dir"
-            chown "$username:$username" "$ssh_dir"
-            
-            echo "$ssh_key" >> "$auth_keys"
-            # Удаление дубликатов
-            awk '!seen[$0]++' "$auth_keys" > "$auth_keys.tmp" && cat "$auth_keys.tmp" > "$auth_keys"
-            rm -f "$auth_keys.tmp"
-            
-            chmod 600 "$auth_keys"
-            chown "$username:$username" "$auth_keys"
-            
-            ok "SSH-ключ добавлен для '$username'."
-            log "Добавлен SSH-ключ для пользователя '$username'."
+            _add_ssh_key_to_user "$username" "$ssh_key"
         else
             warn "Неверный формат SSH-ключа. Вставьте публичный ключ целиком (ssh-ed25519 AAAA... comment)."
         fi
@@ -131,20 +173,7 @@ _create_user() {
         return 0
     fi
     
-    info "Создание пользователя '$username'..."
-    
-    local -a adduser_opts=("--disabled-password" "--gecos" "")
-    
-    # Проверка существования группы
-    if getent group "$username" >/dev/null 2>&1; then
-        warn "Группа '$username' уже существует. Добавляем пользователя в эту группу."
-        adduser_opts+=("--ingroup" "$username")
-    fi
-    
-    if ! adduser "${adduser_opts[@]}" "$username"; then
-        err "Не удалось создать пользователя '$username'."
-        return 1
-    fi
+    _create_user_account "$username" || return 1
     
     # Настройка пароля
     info "Настройка пароля для '$username' (или Enter для пропуска):"
@@ -159,7 +188,7 @@ _create_user() {
             warn "Пароль пропущен. Используется только SSH-аутентификация."
             if ask_yes_no "Сгенерировать случайный пароль?" "y"; then
                 local rand_pass
-                rand_pass=$(tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24)
+                rand_pass=$(_generate_password)
                 if echo "$username:$rand_pass" | chpasswd >/dev/null 2>&1; then
                     ok "Сгенерирован случайный пароль."
                     # Пароль выводится только на экран, не в лог
@@ -188,12 +217,7 @@ _create_user() {
     
     # Добавление в группу sudo
     if ask_yes_no "Добавить пользователя '$username' в группу sudo?" "y"; then
-        if _ensure_sudo_installed && usermod -aG sudo "$username"; then
-            ok "Пользователь '$username' добавлен в группу sudo."
-            log "Пользователь '$username' добавлен в sudo."
-        else
-            err "Не удалось добавить в группу sudo."
-        fi
+        _add_user_to_sudo "$username"
     fi
     
     ok "Пользователь '$username' успешно настроен."

@@ -41,8 +41,16 @@ _configure_timezone() {
     read -rp "$(printf '%s' "${CYAN}Введите часовой пояс (например, Europe/Moscow) [${current_tz:-Etc/UTC}]: ${NC}")" timezone
     timezone=${timezone:-${current_tz:-Etc/UTC}}
     
+    _apply_timezone "$timezone" || return 1
+    [[ $VERBOSE == true ]] && wait_for_enter
+}
+
+_apply_timezone() {
+    local timezone="$1" current_tz
+    current_tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+    
     if ! _validate_timezone "$timezone"; then
-        err "Неверный часовой пояс. Просмотрите список: timedatectl list-timezones"
+        err "Неверный часовой пояс '$timezone'. Просмотрите список: timedatectl list-timezones"
         return 1
     fi
     
@@ -57,8 +65,6 @@ _configure_timezone() {
     else
         info "Часовой пояс уже установлен: $timezone"
     fi
-    
-    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _configure_locale() {
@@ -96,6 +102,14 @@ _configure_hostname() {
         warn "Имя хоста не может быть пустым. Используется текущее."
         return 0
     fi
+    
+    _apply_hostname "$new_hostname" || return 1
+    [[ $VERBOSE == true ]] && wait_for_enter
+}
+
+_apply_hostname() {
+    local new_hostname="$1" current_hostname
+    current_hostname=$(hostname 2>/dev/null || echo "unknown")
     # RFC 1123: метки из букв, цифр и '-', не начинаются/заканчиваются '-'
     if [[ ! "$new_hostname" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$ ]] || (( ${#new_hostname} > 253 )); then
         err "Некорректное имя хоста."
@@ -124,8 +138,6 @@ _configure_hostname() {
     else
         info "Имя хоста уже установлено: $new_hostname"
     fi
-    
-    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _configure_kernel_hardening() {
@@ -137,6 +149,12 @@ _configure_kernel_hardening() {
         return 0
     fi
     
+    _apply_kernel_hardening
+    [[ $VERBOSE == true ]] && wait_for_enter
+}
+
+_apply_kernel_hardening() {
+
     local sysctl_config="/etc/sysctl.d/99-du-hardening.conf"
     
     # Проверка идентичности (идемпотентность)
@@ -216,8 +234,6 @@ EOF
         grep -i "error\|denied\|read-only" <<< "$sysctl_out" | head -n 10
         log "sysctl -p partially failed: $sysctl_out"
     fi
-    
-    [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 # === ГЛАВНОЕ МЕНЮ МОДУЛЯ =====================================

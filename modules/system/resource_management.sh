@@ -195,6 +195,12 @@ _configure_swap_settings() {
         info "Используются настройки по умолчанию (vm.swappiness=$swappiness, vm.vfs_cache_pressure=$cache_pressure)."
     fi
     
+    _write_swap_sysctl "$swappiness" "$cache_pressure"
+}
+
+# Запись и применение vm.swappiness / vm.vfs_cache_pressure
+_write_swap_sysctl() {
+    local swappiness="$1" cache_pressure="$2"
     local swap_config="/etc/sysctl.d/99-swap.conf"
     local tmp_conf
     tmp_conf=$(mktemp)

@@ -186,6 +186,8 @@ _install_dtop() {
     chmod 755 "$installer"
     
     sudo -u "$username" mkdir -p "$user_local_bin"
+    # Лог пишет root (это и нужно), установщик работает от пользователя
+    # shellcheck disable=SC2024
     if sudo -u "$username" -H bash "$installer" < /dev/null >> "$LOG_FILE" 2>&1 && [[ -f "$user_local_bin/dtop" ]]; then
         ok "dtop установлен в $user_local_bin/dtop"
         # Добавление в PATH если нужно

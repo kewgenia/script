@@ -172,9 +172,20 @@ print_msg "$YELLOW" "2. Копирование файлов..."
 if [[ "$SCRIPT_DIR" == "$INSTALL_DIR" ]]; then
     print_msg "$YELLOW" "Скрипт уже находится в директории установки. Пропускаем копирование."
 else
+    # Сохраняем пользовательскую конфигурацию --auto при переустановке
+    SAVED_CONFIG=""
+    if [[ -f "$INSTALL_DIR/config/server.conf" ]]; then
+        SAVED_CONFIG=$(mktemp)
+        cp -p "$INSTALL_DIR/config/server.conf" "$SAVED_CONFIG"
+    fi
     # Очищаем директорию установки перед копированием
     rm -rf "${INSTALL_DIR:?}"/*
     cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR/"
+    if [[ -n "$SAVED_CONFIG" ]]; then
+        mkdir -p "$INSTALL_DIR/config"
+        mv "$SAVED_CONFIG" "$INSTALL_DIR/config/server.conf"
+        print_msg "$GREEN" "Конфигурация config/server.conf сохранена."
+    fi
 fi
 
 # 3. Установка прав на исполнение

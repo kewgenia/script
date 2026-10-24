@@ -16,6 +16,8 @@ LOG_FILE="/var/log/server-setup.log"
 REPORT_FILE="/var/log/server-setup_report_$(date +%Y%m%d_%H%M%S).txt"
 BACKUP_DIR="/root/setup-backup_$(date +%Y%m%d_%H%M%S)"
 VERBOSE=true
+# Неинтерактивный режим (--auto): вопросы получают ответ по умолчанию
+AUTO_MODE=false
 
 # Глобальные переменные для отслеживания состояния
 FAILED_SERVICES=()
@@ -58,8 +60,7 @@ export C_RESET="$NC"
 
 # --- ЛОГИРОВАНИЕ ---
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    echo "$msg" >> "$LOG_FILE"
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"
 }
 
 debug_log() {
@@ -84,7 +85,7 @@ warn() {
 
 err() {
     echo -e "${RED}[ERROR] $1${NC}" | tee -a "$LOG_FILE"
-    sleep 2
+    [[ "$AUTO_MODE" == "true" ]] || sleep 2
 }
 
 # --- ФУНКЦИИ ПЕЧАТИ ---
@@ -158,6 +159,11 @@ ask_yes_no() {
         [Yy]) hint="Y/n" ;;
         [Nn]) hint="y/N" ;;
     esac
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        log "[auto] ${prompt} -> ${default:-n}"
+        [[ "$default" == [Yy] ]]
+        return
+    fi
     while true; do
         if ! answer=$(safe_read "${prompt} (${hint}): "); then
             # EOF: используем ответ по умолчанию, иначе считаем отказом
@@ -166,14 +172,16 @@ ask_yes_no() {
         fi
         [[ -z "$answer" ]] && answer="$default"
         case "$answer" in
-            [Yy]|[Дд]) return 0 ;;
-            [Nn]|[Нн]) return 1 ;;
+            # Кириллица перечислена явно: [Дд] не работает в локали C/POSIX
+            Y|y|Д|д) return 0 ;;
+            N|n|Н|н) return 1 ;;
             *) warn "Пожалуйста, введите y или n." ;;
         esac
     done
 }
 
 wait_for_enter() {
+    [[ "$AUTO_MODE" == "true" ]] && return 0
     echo -e "${C_GRAY}Нажмите Enter для продолжения...${C_RESET}"
     read -r
 }
@@ -225,7 +233,8 @@ cleanup_temp_files() {
 # --- ВЫПОЛНЕНИЕ КОМАНД ---
 run_cmd() {
     log "Выполнение: $*"
-    if eval "$@" >> "$LOG_FILE" 2>&1; then
+    # Команда передается строкой (с && и перенаправлениями), поэтому eval
+    if eval "$*" >> "$LOG_FILE" 2>&1; then
         return 0
     else
         err "Команда не удалась: $*"
@@ -235,8 +244,6 @@ run_cmd() {
 
 # Функция с проверкой ошибок и логированием
 execute_command() {
-    local cmd_string="$*"
-    
     if [[ "$VERBOSE" == "false" ]]; then
         "$@" >> "$LOG_FILE" 2>&1
         return $?
@@ -295,7 +302,19 @@ get_ssh_port() {
 # Проверка, слушает ли что-либо TCP-порт
 is_port_listening() {
     local port="$1"
-    ss -Htln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
+    if command -v ss >/dev/null 2>&1; then
+        ss -Htln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
+        return
+    fi
+    # Без iproute2: LISTEN-сокеты (состояние 0A) из /proc, порт в hex
+    local hex file
+    local -a files=()
+    hex=$(printf '%04X' "$port")
+    for file in /proc/net/tcp /proc/net/tcp6; do
+        [[ -r "$file" ]] && files+=("$file")
+    done
+    (( ${#files[@]} > 0 )) || return 1
+    awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p {found = 1} END {exit !found}' "${files[@]}"
 }
 
 # Проверка корректности имени пользователя Linux

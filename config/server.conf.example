@@ -1,0 +1,47 @@
+# ============================================================ #
+# ==     КОНФИГУРАЦИЯ АВТОМАТИЧЕСКОЙ НАСТРОЙКИ (--auto)      == #
+# ============================================================ #
+# Скопируйте файл и заполните значения:
+#   cp config/server.conf.example config/server.conf
+#   chmod 600 config/server.conf
+# Проверка без изменений:  sudo server-setup --auto --check
+# Запуск настройки:        sudo server-setup --auto
+#
+# Файл исполняется как bash: значения пишите в кавычках, без пробелов вокруг "=".
+# Не храните здесь пароли и секретные ключи.
+
+# --- Пользователь (обязательно) ---
+# Обычный пользователь, который получит sudo и вход по SSH-ключу
+CFG_USER="deploy"
+# Публичный ключ (содержимое id_ed25519.pub с вашего компьютера).
+# Можно оставить пустым, если у пользователя уже есть ~/.ssh/authorized_keys.
+CFG_SSH_KEY=""
+# yes — sudo без пароля; no — будет сгенерирован пароль (показывается один раз в отчете)
+CFG_SUDO_NOPASSWD="no"
+
+# --- SSH ---
+# Новый порт SSH (пусто — оставить текущий)
+CFG_SSH_PORT=""
+CFG_DISABLE_ROOT_LOGIN="yes"
+CFG_DISABLE_PASSWORD_AUTH="yes"
+
+# --- Система ---
+# Имя хоста, например "web1" или "web1.example.com" (пусто — без изменений)
+CFG_HOSTNAME=""
+# Часовой пояс, например "Europe/Moscow" (пусто — без изменений)
+CFG_TIMEZONE=""
+CFG_SYSTEM_UPGRADE="yes"
+# Размер swap-файла: 2G, 512M; "0" — не создавать. Пропускается, если swap уже есть.
+CFG_SWAP_SIZE="2G"
+CFG_TIME_SYNC="yes"
+CFG_KERNEL_HARDENING="yes"
+CFG_AUTO_UPDATES="yes"
+
+# --- Защита ---
+CFG_UFW="yes"
+# Дополнительные открытые порты через пробел, например "80/tcp 443/tcp"
+CFG_UFW_ALLOW_PORTS=""
+CFG_FAIL2BAN="yes"
+
+# --- Дополнительно ---
+CFG_DOCKER="no"

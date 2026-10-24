@@ -19,6 +19,8 @@ source "$SCRIPT_DIR/modules/core/environment.sh"
 # --- ПАРСИНГ АРГУМЕНТОВ ---
 QUIET_MODE=false
 AUTO_MODE=false
+CHECK_ONLY=false
+CONFIG_FILE="$SCRIPT_DIR/config/server.conf"
 
 show_usage() {
     printf "\n"
@@ -32,16 +34,19 @@ show_usage() {
     printf "  It handles updates, firewall, SSH hardening, user creation, and optional tools.\n"
     
     printf "\n%sOptions:%s\n" "$BOLD" "$NC"
-    printf "  %-22s %s\n" "--quiet" "Suppress non-critical output (for automation)."
-    printf "  %-22s %s\n" "--auto" "Run automated setup (non-interactive mode)."
+    printf "  %-22s %s\n" "--auto" "Run automated setup from config file (non-interactive)."
+    printf "  %-22s %s\n" "--config FILE" "Config file for --auto (default: config/server.conf)."
+    printf "  %-22s %s\n" "--check" "With --auto: validate config and show plan, change nothing."
+    printf "  %-22s %s\n" "--quiet" "With --auto: show only errors and the final summary."
     printf "  %-22s %s\n" "-h, --help" "Display this help message and exit."
     printf "  %-22s %s\n" "--version" "Show script version."
     
     printf "\n%sExamples:%s\n" "$BOLD" "$NC"
     printf "  # Run interactive setup\n"
     printf "  %ssudo -E ./%s%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
-    printf "  # Run in quiet mode\n"
-    printf "  %ssudo -E ./%s --quiet%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
+    printf "  # Validate config, then run automated setup\n"
+    printf "  %ssudo ./%s --auto --check%s\n" "$YELLOW" "$(basename "$0")" "$NC"
+    printf "  %ssudo ./%s --auto%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
     
     printf "\n%sImportant Notes:%s\n" "$BOLD" "$NC"
     printf "  - The -E flag preserves your environment variables (recommended)\n"
@@ -69,6 +74,18 @@ while [[ $# -gt 0 ]]; do
             AUTO_MODE=true
             shift
             ;;
+        --check)
+            CHECK_ONLY=true
+            shift
+            ;;
+        --config)
+            if [[ -z "${2:-}" ]]; then
+                printf "Параметр --config требует путь к файлу.\n" >&2
+                exit 1
+            fi
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             show_usage
             ;;
@@ -81,6 +98,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ "$AUTO_MODE" != "true" ]] && [[ "$QUIET_MODE" == "true" || "$CHECK_ONLY" == "true" ]]; then
+    printf "Параметры --quiet и --check используются вместе с --auto (см. --help).\n" >&2
+    exit 1
+fi
 
 # --- ПОДКЛЮЧЕНИЕ МОДУЛЕЙ ---
 # Каждый модуль объявляет свои пункты меню через @menu.manifest,
@@ -99,6 +121,7 @@ MODULES=(
     "system/resource_management.sh"
     "system/audit_cleanup.sh"
     "core/custom_bashrc.sh"
+    "core/auto_setup.sh"
 )
 
 for module in "${MODULES[@]}"; do
@@ -124,14 +147,6 @@ handle_choice() {
     return 0
 }
 
-# --- АВТОМАТИЧЕСКИЙ РЕЖИМ (заглушка для будущей реализации) ---
-run_automated_setup() {
-    print_section "Автоматическая настройка сервера"
-    info "Этот режим находится в разработке."
-    info "Пока что используйте интерактивное меню."
-    wait_for_enter
-}
-
 # --- ГЛАВНОЕ МЕНЮ ---
 main() {
     # Устанавливаем обработчики ошибок и выхода
@@ -153,17 +168,15 @@ main() {
     # Вывод заголовка
     print_header
     
-    # Если тихий режим, пропускаем меню
-    if [[ "$QUIET_MODE" == "true" ]]; then
-        info "Тихий режим включен. Вывод подавлен."
-        # В будущем здесь будет автоматическая настройка
-        return 0
-    fi
-    
-    # Если автоматический режим
+    # Автоматический режим по файлу конфигурации
     if [[ "$AUTO_MODE" == "true" ]]; then
-        run_automated_setup
-        return 0
+        local mode=""
+        [[ "$CHECK_ONLY" == "true" ]] && mode="check"
+        # Внутри if ловушка ERR не срабатывает: ошибки шагов уже есть в отчете
+        if run_automated_setup "$CONFIG_FILE" $mode; then
+            return 0
+        fi
+        exit 1
     fi
     
     # Интерактивное меню
