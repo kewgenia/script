@@ -4,7 +4,7 @@
 # ============================================================ #
 # Этот файл содержит базовые функции для UI, цвета и взаимодействие
 # с пользователем.
-# Версия: 2.1.0
+# Версия: 2.2.0
 
 # --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 # Определяем реальный путь к скрипту (с учетом симлинков)
@@ -16,6 +16,8 @@ LOG_FILE="/var/log/server-setup.log"
 REPORT_FILE="/var/log/server-setup_report_$(date +%Y%m%d_%H%M%S).txt"
 BACKUP_DIR="/root/setup-backup_$(date +%Y%m%d_%H%M%S)"
 VERBOSE=true
+# Неинтерактивный режим (--auto): вопросы получают ответ по умолчанию
+AUTO_MODE=false
 
 # Глобальные переменные для отслеживания состояния
 FAILED_SERVICES=()
@@ -58,8 +60,7 @@ export C_RESET="$NC"
 
 # --- ЛОГИРОВАНИЕ ---
 log() {
-    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-    echo "$msg" >> "$LOG_FILE"
+    printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG_FILE"
 }
 
 debug_log() {
@@ -84,7 +85,7 @@ warn() {
 
 err() {
     echo -e "${RED}[ERROR] $1${NC}" | tee -a "$LOG_FILE"
-    sleep 2
+    [[ "$AUTO_MODE" == "true" ]] || sleep 2
 }
 
 # --- ФУНКЦИИ ПЕЧАТИ ---
@@ -93,8 +94,8 @@ print_header() {
     printf '\n'
     printf '%s\n' "${CYAN}╔═════════════════════════════════════════════════════════════════╗${NC}"
     printf '%s\n' "${CYAN}║                                                                 ║${NC}"
-    printf '%s\n' "${CYAN}║       SERVER SETUP AND HARDENING SCRIPT                       ║${NC}"
-    printf '%s\n' "${CYAN}║                      v2.1.0 | 2026-05-03                       ║${NC}"
+    printf '%s\n' "${CYAN}║               SERVER SETUP AND HARDENING SCRIPT                 ║${NC}"
+    printf '%s\n' "${CYAN}║                       v2.2.0 | 2026-05-03                       ║${NC}"
     printf '%s\n' "${CYAN}║                                                                 ║${NC}"
     printf '%s\n' "${CYAN}╚═════════════════════════════════════════════════════════════════╝${NC}"
     printf '\n'
@@ -136,27 +137,51 @@ print_separator() {
 }
 
 # --- ВВОД/ВЫВОД ---
+# Читает строку от пользователя. Возвращает код ошибки при EOF (Ctrl+D,
+# закрытый stdin), чтобы циклы меню могли корректно завершиться.
 safe_read() {
     local prompt="$1"
     local result
-    read -rp "$(echo -e "${CYAN}${prompt}${NC}")" result
+    if ! read -rp "$(echo -e "${CYAN}${prompt}${NC}")" result; then
+        echo ""
+        return 1
+    fi
     echo "$result"
 }
 
+# ask_yes_no "Вопрос" [y|n] — второй аргумент задает ответ по умолчанию (Enter).
 ask_yes_no() {
     local prompt="${1:-Продолжить?}"
+    local default="${2:-}"
+    local hint="y/n"
     local answer
+    case "$default" in
+        [Yy]) hint="Y/n" ;;
+        [Nn]) hint="y/N" ;;
+    esac
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        log "[auto] ${prompt} -> ${default:-n}"
+        [[ "$default" == [Yy] ]]
+        return
+    fi
     while true; do
-        answer=$(safe_read "${prompt} (y/n): ")
+        if ! answer=$(safe_read "${prompt} (${hint}): "); then
+            # EOF: используем ответ по умолчанию, иначе считаем отказом
+            [[ "$default" == [Yy] ]] && return 0
+            return 1
+        fi
+        [[ -z "$answer" ]] && answer="$default"
         case "$answer" in
-            [Yy]|[Дд]) return 0 ;;
-            [Nn]|[Нн]) return 1 ;;
+            # Кириллица перечислена явно: [Дд] не работает в локали C/POSIX
+            Y|y|Д|д) return 0 ;;
+            N|n|Н|н) return 1 ;;
             *) warn "Пожалуйста, введите y или n." ;;
         esac
     done
 }
 
 wait_for_enter() {
+    [[ "$AUTO_MODE" == "true" ]] && return 0
     echo -e "${C_GRAY}Нажмите Enter для продолжения...${C_RESET}"
     read -r
 }
@@ -208,7 +233,8 @@ cleanup_temp_files() {
 # --- ВЫПОЛНЕНИЕ КОМАНД ---
 run_cmd() {
     log "Выполнение: $*"
-    if eval "$@" >> "$LOG_FILE" 2>&1; then
+    # Команда передается строкой (с && и перенаправлениями), поэтому eval
+    if eval "$*" >> "$LOG_FILE" 2>&1; then
         return 0
     else
         err "Команда не удалась: $*"
@@ -218,8 +244,6 @@ run_cmd() {
 
 # Функция с проверкой ошибок и логированием
 execute_command() {
-    local cmd_string="$*"
-    
     if [[ "$VERBOSE" == "false" ]]; then
         "$@" >> "$LOG_FILE" 2>&1
         return $?
@@ -261,6 +285,64 @@ check_dependencies() {
     return 0
 }
 
+# --- СИСТЕМНЫЕ ХЕЛПЕРЫ ---
+
+# Текущий порт SSH из эффективной конфигурации sshd (учитывает drop-in файлы)
+get_ssh_port() {
+    local port=""
+    if command -v sshd >/dev/null 2>&1; then
+        port=$(sshd -T 2>/dev/null | awk '$1 == "port" {print $2; exit}')
+    fi
+    if [[ -z "$port" && -f /etc/ssh/sshd_config ]]; then
+        port=$(awk 'tolower($1) == "port" {print $2; exit}' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null)
+    fi
+    echo "${port:-22}"
+}
+
+# Проверка, слушает ли что-либо TCP-порт
+is_port_listening() {
+    local port="$1"
+    if command -v ss >/dev/null 2>&1; then
+        ss -Htln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
+        return
+    fi
+    # Без iproute2: LISTEN-сокеты (состояние 0A) из /proc, порт в hex
+    local hex file
+    local -a files=()
+    hex=$(printf '%04X' "$port")
+    for file in /proc/net/tcp /proc/net/tcp6; do
+        [[ -r "$file" ]] && files+=("$file")
+    done
+    (( ${#files[@]} > 0 )) || return 1
+    awk -v p=":$hex" '$4 == "0A" && substr($2, length($2) - 4) == p {found = 1} END {exit !found}' "${files[@]}"
+}
+
+# Проверка корректности имени пользователя Linux
+is_valid_username() {
+    [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]
+}
+
+# Запрашивает имя существующего пользователя.
+# По умолчанию предлагается пользователь, запустивший sudo (SUDO_USER).
+# Результат выводится в stdout; код возврата 1 при ошибке.
+ask_existing_user() {
+    local prompt="${1:-Введите имя пользователя}"
+    local default="${SUDO_USER:-}"
+    [[ "$default" == "root" ]] && default=""
+    local username
+    username=$(safe_read "${prompt}${default:+ [$default]}: ") || return 1
+    username="${username:-$default}"
+    if [[ -z "$username" ]]; then
+        err "Имя пользователя не может быть пустым." >&2
+        return 1
+    fi
+    if ! id "$username" &>/dev/null; then
+        err "Пользователь '$username' не существует." >&2
+        return 1
+    fi
+    echo "$username"
+}
+
 # --- ПАРСЕР МАНИФЕСТОВ МЕНЮ ---
 # Глобальные переменные для кэширования манифестов
 declare -a _MANIFEST_ITEMS=()
@@ -278,16 +360,18 @@ _parse_all_manifests() {
     local files
     files=$(find "$module_dir" -name "*.sh" -type f 2>/dev/null) || return
     
-    local file
+    local file line
     while IFS= read -r file; do
         [[ -r "$file" ]] || continue
         
         while IFS= read -r line; do
             # Ищем строки вида: # @item( menu_id | key | label | action | ... )
-            if [[ "$line" == *"@item("* ]]; then
+            if [[ "$line" =~ ^#[[:space:]]*@item\( ]]; then
                 # Извлекаем содержимое между скобками @item( и )
                 local content
-                content=$(echo "$line" | sed 's/.*@item(//' | sed 's/).*//')
+                # Обрезаем по ПОСЛЕДНЕЙ скобке: заголовки могут содержать "(...)"
+                content="${line#*@item(}"
+                content="${content%)*}"
                 
                 # Сохраняем в массив: "menu_id|key|label|action"
                 if [[ -n "$content" ]]; then
@@ -298,7 +382,16 @@ _parse_all_manifests() {
     done <<< "$files"
 }
 
-# Рендеринг пунктов меню для указанного menu_id
+# Удаление пробелов по краям строки
+_trim() {
+    local str="$1"
+    str="${str#"${str%%[![:space:]]*}"}"
+    str="${str%"${str##*[![:space:]]}"}"
+    printf '%s' "$str"
+}
+
+# Рендеринг пунктов меню для указанного menu_id.
+# Пункты сортируются по ORDER, между разными GROUP выводится пустая строка.
 render_menu_items() {
     local menu_id="$1"
     
@@ -307,19 +400,25 @@ render_menu_items() {
         _parse_all_manifests
     fi
     
-    # Выводим пункты для указанного menu_id
-    local item
+    local item rows=""
+    local -a parts
     for item in "${_MANIFEST_ITEMS[@]}"; do
         IFS='|' read -ra parts <<< "$item"
-        
-        local item_menu_id=$(echo "${parts[0]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        local item_key=$(echo "${parts[1]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        local item_label=$(echo "${parts[2]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        
-        if [[ "$item_menu_id" == "$menu_id" ]]; then
-            printf_menu_option "$item_key" "$item_label"
-        fi
+        [[ "$(_trim "${parts[0]}")" == "$menu_id" ]] || continue
+        rows+="$(_trim "${parts[4]:-0}")"$'\t'"$(_trim "${parts[5]:-0}")"$'\t'"$(_trim "${parts[1]}")"$'\t'"$(_trim "${parts[2]}")"$'\n'
     done
+    [[ -z "$rows" ]] && return 0
+    
+    local order group key label prev_group=""
+    while IFS=$'\t' read -r order group key label; do
+        [[ -z "$key" ]] && continue
+        if [[ -n "$prev_group" && "$group" != "$prev_group" ]]; then
+            echo ""
+        fi
+        printf_menu_option "$key" "$label"
+        prev_group="$group"
+    done < <(printf '%s' "$rows" | sort -t $'\t' -k1,1n)
+    echo ""
 }
 
 # Получение действия для указанного menu_id и ключа выбора
@@ -333,15 +432,13 @@ get_menu_action() {
     fi
     
     local item
+    local -a parts
     for item in "${_MANIFEST_ITEMS[@]}"; do
         IFS='|' read -ra parts <<< "$item"
         
-        local item_menu_id=$(echo "${parts[0]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        local item_key=$(echo "${parts[1]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        local item_action=$(echo "${parts[3]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        
-        if [[ "$item_menu_id" == "$menu_id" ]] && [[ "$item_key" == "$key" ]]; then
-            echo "$item_action"
+        if [[ "$(_trim "${parts[0]}")" == "$menu_id" ]] && [[ "$(_trim "${parts[1]}")" == "$key" ]]; then
+            _trim "${parts[3]}"
+            echo ""
             return 0
         fi
     done

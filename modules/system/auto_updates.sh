@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: АВТООБНОВЛЕНИЯ                == #
 # ============================================================ #
 # Настройка автоматических обновлений безопасности.
-# Версия: 1.0.0
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 6 | 🔄 Автообновления | show_auto_updates_menu | 60 | 60 | Настройка unattended-upgrades )
+# @item( main | 6 | 🔄 Автообновления | show_auto_updates_menu | 60 | 10 | Настройка unattended-upgrades )
 # @item( auto_updates | 1 | Включить автообновления | _enable_auto_updates | 10 | 10 | Настройка unattended-upgrades )
 # @item( auto_updates | 2 | Проверить статус | _check_auto_updates_status | 20 | 10 | Проверка конфигурации )
 # @item( auto_updates | 3 | Настроить параметры | _configure_auto_updates_params | 30 | 10 | Изменение настроек )
@@ -25,16 +25,23 @@ _check_unattended_installed() {
     return 0
 }
 
+AUTO_UPGRADES_FILE="/etc/apt/apt.conf.d/20auto-upgrades"
+UNATTENDED_CONF="/etc/apt/apt.conf.d/50unattended-upgrades"
+UNATTENDED_LOCAL_CONF="/etc/apt/apt.conf.d/52unattended-upgrades-local"
+
+_auto_updates_enabled() {
+    [[ -f "$AUTO_UPGRADES_FILE" ]] && grep -qE 'APT::Periodic::Unattended-Upgrade[[:space:]]+"1"' "$AUTO_UPGRADES_FILE"
+}
+
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
 _enable_auto_updates() {
-    local section="Настройка автообновлений"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка автообновлений"
     
     # Проверка установки unattended-upgrades
     if ! _check_unattended_installed; then
         if ask_yes_no "Пакет unattended-upgrades не установлен. Установить?" "y"; then
-            if ! run_cmd "apt-get install -y unattended-upgrades"; then
+            if ! run_cmd "DEBIAN_FRONTEND=noninteractive apt-get install -y unattended-upgrades apt-listchanges"; then
                 err "Не удалось установить unattended-upgrades."
                 return 1
             fi
@@ -47,35 +54,30 @@ _enable_auto_updates() {
         info "unattended-upgrades уже установлен."
     fi
     
-    # Проверка существующей конфигурации
-    local config_file="/etc/apt/apt.conf.d/50unattended-upgrades"
-    if [[ -f "$config_file" ]] && grep -q "Unattended-Upgrade::Allowed-Origins" "$config_file"; then
-        info "Конфигурация unattended-upgrades уже существует."
-        if ! ask_yes_no "Перезаписать существующую конфигурацию?" "n"; then
-            info "Используется существующая конфигурация."
-            return 0
-        fi
-    fi
-    
-    # Настройка автообновлений
-    info "Настройка автоматических обновлений..."
-    
-    # Используем debconf для настройки
-    echo "unattended-upgrades unattended-upgrades/enable_auto_updates boolean true" | debconf-set-selections
-    
-    # Перенастройка пакета
-    DEBIAN_FRONTEND=noninteractive dpkg-reconfigure -f noninteractive unattended-upgrades
-    
-    # Проверка результата
-    if [[ -f "$config_file" ]] && grep -q "Unattended-Upgrade::Allowed-Origins" "$config_file"; then
-        ok "Автообновления успешно настроены."
-        log "Automatic security updates enabled."
+    if _auto_updates_enabled; then
+        ok "Автообновления уже включены ($AUTO_UPGRADES_FILE)."
     else
-        warn "Конфигурация может быть неполной. Проверьте $config_file"
+        # Именно этот файл включает ежедневный запуск unattended-upgrade
+        cat > "$AUTO_UPGRADES_FILE" <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
+        chmod 644 "$AUTO_UPGRADES_FILE"
+        ok "Автообновления включены: $AUTO_UPGRADES_FILE"
+        log "Automatic security updates enabled."
     fi
     
-    # Включение в автозагрузку
-    systemctl enable unattended-upgrades 2>/dev/null || true
+    # Таймеры apt, запускающие обновления
+    systemctl enable --now apt-daily.timer apt-daily-upgrade.timer >/dev/null 2>&1 || true
+    systemctl enable unattended-upgrades >/dev/null 2>&1 || true
+    
+    info "Проверка конфигурации (dry-run)..."
+    if unattended-upgrade --dry-run >> "$LOG_FILE" 2>&1; then
+        ok "Проверка unattended-upgrade прошла успешно."
+    else
+        warn "unattended-upgrade --dry-run завершился с ошибкой. Проверьте $LOG_FILE"
+    fi
     
     [[ $VERBOSE == true ]] && wait_for_enter
 }
@@ -85,76 +87,81 @@ _check_auto_updates_status() {
     
     if ! _check_unattended_installed; then
         warn "unattended-upgrades не установлен."
+        [[ $VERBOSE == true ]] && wait_for_enter
         return 1
     fi
     
-    info "Проверка конфигурации..."
+    if _auto_updates_enabled; then
+        ok "Автообновления включены ($AUTO_UPGRADES_FILE)."
+    else
+        warn "Автообновления выключены ($AUTO_UPGRADES_FILE)."
+    fi
     
-    local config_file="/etc/apt/apt.conf.d/50unattended-upgrades"
-    if [[ -f "$config_file" ]]; then
-        ok "Конфигурационный файл найден: $config_file"
+    if [[ -f "$UNATTENDED_LOCAL_CONF" ]]; then
+        info "Пользовательские параметры ($UNATTENDED_LOCAL_CONF):"
+        grep -vE '^[[:space:]]*(//|$)' "$UNATTENDED_LOCAL_CONF"
+    fi
+    
+    local timer
+    for timer in apt-daily.timer apt-daily-upgrade.timer; do
+        if systemctl is-enabled "$timer" >/dev/null 2>&1; then
+            ok "Таймер $timer включен."
+        else
+            warn "Таймер $timer не включен."
+        fi
+    done
+    
+    if [[ -f /var/log/unattended-upgrades/unattended-upgrades.log ]]; then
         echo ""
-        info "Содержимое конфигурации:"
-        grep -v "^//" "$config_file" | grep -v "^$" | head -20
-    else
-        warn "Конфигурационный файл не найден."
+        info "Последние записи лога:"
+        tail -n 5 /var/log/unattended-upgrades/unattended-upgrades.log
     fi
-    
-    # Проверка службы
-    if systemctl is-enabled unattended-upgrades >/dev/null 2>&1; then
-        ok "Служба unattended-upgrades включена."
-    else
-        warn "Служба unattended-upgrades не включена."
-    fi
-    
-    echo ""
-    info "Для просмотра полной конфигурации выполните:"
-    info "  cat $config_file"
     
     [[ $VERBOSE == true ]] && wait_for_enter
 }
 
 _configure_auto_updates_params() {
-    local config_file="/etc/apt/apt.conf.d/50unattended-upgrades"
-    
     if ! _check_unattended_installed; then
         err "unattended-upgrades не установлен."
         return 1
     fi
     
-    # Создание резервной копии
-    if [[ -f "$config_file" ]]; then
-        cp "$config_file" "${config_file}.backup_$(date +%Y%m%d_%H%M%S)"
-        ok "Создана резервная копия конфигурации."
+    info "Настройка параметров автообновлений..."
+    info "Параметры записываются в $UNATTENDED_LOCAL_CONF (дополняет $UNATTENDED_CONF)."
+    
+    local auto_reboot="false" reboot_time="03:00"
+    if ask_yes_no "Автоматически перезагружать сервер, если это требуется после обновления?" "n"; then
+        auto_reboot="true"
+        local input
+        input=$(safe_read "Время перезагрузки (ЧЧ:ММ) [$reboot_time]: ") || return 1
+        input="${input:-$reboot_time}"
+        if [[ ! "$input" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+            err "Неверный формат времени."
+            return 1
+        fi
+        reboot_time="$input"
     fi
     
-    # Основные параметры для настройки
-    info "Настройка параметров автообновлений..."
+    local remove_unused="true"
+    ask_yes_no "Удалять неиспользуемые зависимости после обновления?" "y" || remove_unused="false"
     
-    # Пример создания базовой конфигурации
-    cat > "$config_file" <<'EOF'
-Unattended-Upgrade::Allowed-Origins {
-    "${distro_id}:${distro_codename}-security";
-    "${distro_id}:${distro_codename}-updates";
-};
-
-// Do automatic removal of new unused dependencies after the upgrade
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-
-// Automatically reboot system if any upgraded package requires it, via the
-// "Install-Recommends" mechanism.
-Unattended-Upgrade::Automatic-Reboot "false";
-
-// If automatic reboot is enabled and needed, reboot at the specific
-// time instead of random delay
-Unattended-Upgrade::Automatic-Reboot-Time "02:00";
-
-// Send email to this address for problems or packages upgrades
-// Unattended-Upgrade::Mail "root@localhost";
+    if [[ -f "$UNATTENDED_LOCAL_CONF" ]]; then
+        cp "$UNATTENDED_LOCAL_CONF" "${UNATTENDED_LOCAL_CONF}.backup_$(date +%Y%m%d_%H%M%S)"
+    fi
+    
+    # Список источников (Origins-Pattern) не трогаем: дистрибутивный
+    # 50unattended-upgrades уже корректно настроен для security-обновлений.
+    cat > "$UNATTENDED_LOCAL_CONF" <<EOF
+// Сгенерировано Server Setup $(date '+%Y-%m-%d %H:%M:%S')
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "$remove_unused";
+Unattended-Upgrade::Automatic-Reboot "$auto_reboot";
+Unattended-Upgrade::Automatic-Reboot-Time "$reboot_time";
 EOF
+    chmod 644 "$UNATTENDED_LOCAL_CONF"
     
     ok "Параметры автообновлений настроены."
-    info "Вы можете отредактировать файл: $config_file"
+    log "Unattended-upgrades params: reboot=$auto_reboot at $reboot_time, remove_unused=$remove_unused"
     
     [[ $VERBOSE == true ]] && wait_for_enter
 }
@@ -181,7 +188,7 @@ show_auto_updates_menu() {
             2) _check_auto_updates_status ;;
             3) _configure_auto_updates_params ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

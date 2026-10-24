@@ -4,7 +4,7 @@
 # ============================================================ #
 # Главный скрипт для первоначальной настройки и администрирования сервера.
 # Использует модульную архитектуру с манифестами меню.
-# Версия: 2.1.0
+# Версия: 2.2.0
 
 set -uo pipefail
 
@@ -19,6 +19,8 @@ source "$SCRIPT_DIR/modules/core/environment.sh"
 # --- ПАРСИНГ АРГУМЕНТОВ ---
 QUIET_MODE=false
 AUTO_MODE=false
+CHECK_ONLY=false
+CONFIG_FILE="$SCRIPT_DIR/config/server.conf"
 
 show_usage() {
     printf "\n"
@@ -32,28 +34,31 @@ show_usage() {
     printf "  It handles updates, firewall, SSH hardening, user creation, and optional tools.\n"
     
     printf "\n%sOptions:%s\n" "$BOLD" "$NC"
-    printf "  %-22s %s\n" "--quiet" "Suppress non-critical output (for automation)."
-    printf "  %-22s %s\n" "--auto" "Run automated setup (non-interactive mode)."
+    printf "  %-22s %s\n" "--auto" "Run automated setup from config file (non-interactive)."
+    printf "  %-22s %s\n" "--config FILE" "Config file for --auto (default: config/server.conf)."
+    printf "  %-22s %s\n" "--check" "With --auto: validate config and show plan, change nothing."
+    printf "  %-22s %s\n" "--quiet" "With --auto: show only errors and the final summary."
     printf "  %-22s %s\n" "-h, --help" "Display this help message and exit."
     printf "  %-22s %s\n" "--version" "Show script version."
     
     printf "\n%sExamples:%s\n" "$BOLD" "$NC"
     printf "  # Run interactive setup\n"
     printf "  %ssudo -E ./%s%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
-    printf "  # Run in quiet mode\n"
-    printf "  %ssudo -E ./%s --quiet%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
+    printf "  # Validate config, then run automated setup\n"
+    printf "  %ssudo ./%s --auto --check%s\n" "$YELLOW" "$(basename "$0")" "$NC"
+    printf "  %ssudo ./%s --auto%s\n\n" "$YELLOW" "$(basename "$0")" "$NC"
     
     printf "\n%sImportant Notes:%s\n" "$BOLD" "$NC"
     printf "  - The -E flag preserves your environment variables (recommended)\n"
-    printf "  - Logs are saved to %s/var/log/server-setup_*.log%s\n" "$BOLD" "$NC"
-    printf "  - Backups of modified configs are in %s/root/setup_backup_*%s\n" "$BOLD" "$NC"
+    printf "  - Logs are saved to %s%s%s\n" "$BOLD" "$LOG_FILE" "$NC"
+    printf "  - Backups of modified configs are in %s/root/setup-backup_*%s\n" "$BOLD" "$NC"
     
     printf "\n"
     exit 0
 }
 
 show_version() {
-    echo "Server Setup Script v2.1.0 (2026-05-03)"
+    echo "Server Setup Script v2.2.0 (2026-05-03)"
     exit 0
 }
 
@@ -69,6 +74,18 @@ while [[ $# -gt 0 ]]; do
             AUTO_MODE=true
             shift
             ;;
+        --check)
+            CHECK_ONLY=true
+            shift
+            ;;
+        --config)
+            if [[ -z "${2:-}" ]]; then
+                printf "Параметр --config требует путь к файлу.\n" >&2
+                exit 1
+            fi
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
         -h|--help)
             show_usage
             ;;
@@ -76,76 +93,58 @@ while [[ $# -gt 0 ]]; do
             show_version
             ;;
         *)
-            shift
+            printf "Неизвестный параметр: %s (см. --help)\n" "$1" >&2
+            exit 1
             ;;
     esac
 done
 
-# --- Генератор меню (Заглушка, пока не реализован парсер манифестов) ---
-# В полной версии здесь должен быть source "$SCRIPT_DIR/modules/core/menu_generator.sh"
-# Пока реализуем простой роутинг вручную для работоспособности.
+if [[ "$AUTO_MODE" != "true" ]] && [[ "$QUIET_MODE" == "true" || "$CHECK_ONLY" == "true" ]]; then
+    printf "Параметры --quiet и --check используются вместе с --auto (см. --help).\n" >&2
+    exit 1
+fi
 
-# Подключаем модули
-source "$SCRIPT_DIR/modules/security/system_update.sh"
-source "$SCRIPT_DIR/modules/security/mirror_check.sh"
+# --- ПОДКЛЮЧЕНИЕ МОДУЛЕЙ ---
+# Каждый модуль объявляет свои пункты меню через @menu.manifest,
+# главное меню строится автоматически (render_menu_items "main").
+MODULES=(
+    "security/system_update.sh"
+    "security/mirror_check.sh"
+    "security/user_management.sh"
+    "security/ssh_hardening.sh"
+    "security/firewall.sh"
+    "security/intrusion_prevention.sh"
+    "system/auto_updates.sh"
+    "system/system_hardening.sh"
+    "network/network_tools.sh"
+    "system/backup.sh"
+    "system/resource_management.sh"
+    "system/audit_cleanup.sh"
+    "core/custom_bashrc.sh"
+    "core/auto_setup.sh"
+)
 
-# Заглушки для будущих модулей (пункты 2-8 из документации)
-_placeholder_action() {
-    local name="$1"
-    warn "Модуль '$name' находится в разработке."
-    info "Этот пункт меню будет реализован позднее."
-    wait_for_enter
-}
+for module in "${MODULES[@]}"; do
+    if [[ -f "$SCRIPT_DIR/modules/$module" ]]; then
+        # shellcheck source=/dev/null
+        source "$SCRIPT_DIR/modules/$module"
+    else
+        printf "Модуль не найден: %s\n" "$SCRIPT_DIR/modules/$module" >&2
+    fi
+done
+unset module
 
-# Функции-заглушки для пунктов меню
-create_user() { _placeholder_action "Создание пользователя"; }
-setup_ssh_keys() { _placeholder_action "Настройка SSH-ключей"; }
-setup_firewall() { _placeholder_action "Настройка фаервола"; }
-setup_fail2ban() { _placeholder_action "Установка Fail2ban"; }
-disable_services() { _placeholder_action "Отключение служб"; }
-auto_updates() { _placeholder_action "Автообновления"; }
-extra_security() { _placeholder_action "Доп. меры защиты"; }
-
-# --- Рендеринг меню ---
-# В будущем заменится на автоматическую генерацию из манифестов
-show_main_menu_items() {
-    printf_menu_option "1" "Обновление системы (apt update/upgrade)"
-    printf_menu_option "2" "Создание пользователя с ограниченными правами"
-    printf_menu_option "3" "Настройка SSH-ключей и безопасности SSH"
-    printf_menu_option "4" "Настройка фаервола (UFW/Firewalld)"
-    printf_menu_option "5" "Установка и настройка Fail2ban"
-    printf_menu_option "6" "Отключение ненужных служб"
-    printf_menu_option "7" "Настройка автоматических обновлений"
-    printf_menu_option "8" "Дополнительные меры защиты"
-    echo ""
-    printf_menu_option "m" "🌐 Зеркала APT (Управление репозиториями)"
-    echo ""
-}
-
-# --- Обработка выбора ---
+# --- Обработка выбора в главном меню ---
 handle_choice() {
     local choice="$1"
-    case "$choice" in
-        1) show_system_update_menu ;;
-        2) create_user ;;
-        3) setup_ssh_keys ;;
-        4) setup_firewall ;;
-        5) setup_fail2ban ;;
-        6) disable_services ;;
-        7) auto_updates ;;
-        8) extra_security ;;
-        m|M) show_mirror_check_menu ;;
-        *) return 1 ;;
-    esac
+    local action
+    action=$(get_menu_action "main" "$choice") || return 1
+    if ! declare -F "$action" >/dev/null; then
+        err "Функция '$action' не найдена."
+        return 0
+    fi
+    "$action"
     return 0
-}
-
-# --- АВТОМАТИЧЕСКИЙ РЕЖИМ (заглушка для будущей реализации) ---
-run_automated_setup() {
-    print_section "Автоматическая настройка сервера"
-    info "Этот режим находится в разработке."
-    info "Пока что используйте интерактивное меню."
-    wait_for_enter
 }
 
 # --- ГЛАВНОЕ МЕНЮ ---
@@ -162,22 +161,22 @@ main() {
     log "Запуск скрипта Server Setup."
     
     # Проверка зависимостей
-    check_dependencies
+    if ! check_dependencies; then
+        exit 1
+    fi
     
     # Вывод заголовка
     print_header
     
-    # Если тихий режим, пропускаем меню
-    if [[ "$QUIET_MODE" == "true" ]]; then
-        info "Тихий режим включен. Вывод подавлен."
-        # В будущем здесь будет автоматическая настройка
-        return 0
-    fi
-    
-    # Если автоматический режим
+    # Автоматический режим по файлу конфигурации
     if [[ "$AUTO_MODE" == "true" ]]; then
-        run_automated_setup
-        return 0
+        local mode=""
+        [[ "$CHECK_ONLY" == "true" ]] && mode="check"
+        # Внутри if ловушка ERR не срабатывает: ошибки шагов уже есть в отчете
+        if run_automated_setup "$CONFIG_FILE" $mode; then
+            return 0
+        fi
+        exit 1
     fi
     
     # Интерактивное меню
@@ -186,7 +185,7 @@ main() {
         printf_description "Первоначальная настройка, установка ПО и администрирование сервера."
         
         echo -e "${BOLD}Основные шаги:${NC}"
-        show_main_menu_items
+        render_menu_items "main"
         
         printf_menu_option "q" "Выход"
         echo ""
@@ -198,6 +197,8 @@ main() {
             info "Выход из скрипта."
             break
         fi
+        
+        [[ -z "$choice" ]] && continue
         
         if ! handle_choice "$choice"; then
             err "Нет такого пункта." 

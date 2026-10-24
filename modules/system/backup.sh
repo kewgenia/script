@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: БЭКАПЫ (RSYNC)               == #
 # ============================================================ #
 # Настройка автоматических бэкапов через rsync over SSH.
-# Версия: 1.0.0.
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 9 | 💾 Бэкапы (rsync) | show_backup_menu | 90 | 90 | Настройка автоматических бэкапов )
+# @item( main | 9 | 💾 Бэкапы (rsync) | show_backup_menu | 90 | 20 | Настройка автоматических бэкапов )
 # @item( backup | 1 | Настроить бэкапы | _setup_backup | 10 | 10 | Конфигурация rsync over SSH )
 # @item( backup | 2 | Проверить бэкап | _test_backup | 20 | 10 | Тестовый запуск бэкапа )
 # @item( backup | 3 | Статус бэкапов | _backup_status | 30 | 10 | Просмотр настроек и крона )
@@ -39,19 +39,19 @@ _validate_port() {
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
 _setup_backup() {
-    local section="Настройка бэкапов (rsync over SSH)"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Настройка бэкапов (rsync over SSH)"
     
     if ! ask_yes_no "Настроить автоматические бэкапы через rsync?" "y"; then
         info "Пропуск настройки бэкапов."
         return 0
     fi
     
-    local username="${USERNAME:-root}"
-    if ! id "$username" &>/dev/null; then
-        err "Пользователь '$username' не существует."
-        return 1
-    fi
+    local pkg
+    for pkg in rsync openssh-client; do
+        if ! dpkg -l "$pkg" 2>/dev/null | grep -q ^ii; then
+            run_cmd "apt-get install -y $pkg" || { err "Не удалось установить $pkg."; return 1; }
+        fi
+    done
     
     # Генерация SSH ключа для root если нет
     local root_ssh_dir="/root/.ssh"
@@ -89,7 +89,7 @@ _setup_backup() {
     # Копирование ключа
     if ask_yes_no "Скопировать SSH ключ на удаленный сервер?" "y"; then
         info "Копирование ключа..."
-        if ssh-copy-id -i "$root_ssh_key.pub" -p "$backup_port" "$backup_dest" 2>&1 | tee -a "$LOG_FILE"; then
+        if ssh-copy-id -o StrictHostKeyChecking=accept-new -i "$root_ssh_key.pub" -p "$backup_port" "$backup_dest"; then
             ok "Ключ скопирован."
         else
             warn "Не удалось скопировать ключ автоматически."
@@ -100,21 +100,31 @@ _setup_backup() {
     # Тест подключения
     if ask_yes_no "Проверить SSH подключение?" "y"; then
         info "Тест подключения..."
-        if ssh -p "$backup_port" -o BatchMode=yes -o ConnectTimeout=10 "$backup_dest" true 2>&1 | tee -a "$LOG_FILE"; then
+        if ssh -p "$backup_port" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$backup_dest" true 2>&1 | tee -a "$LOG_FILE"; then
             ok "SSH подключение успешно."
         else
             warn "SSH подключение не удалось. Проверьте настройки."
         fi
     fi
     
-    # Выбор директорий для бэкапа
-    local backup_dirs_string="/home/${username}/"
-    if ask_yes_no "Указать другие директории для бэкапа?" "n"; then
-        read -rp "$(printf '%s' "${CYAN}Введите директории через пробел: ${NC}")" -a user_dirs
-        if (( ${#user_dirs[@]} > 0 )); then
-            backup_dirs_string="${user_dirs[*]}"
-        fi
+    # Выбор директорий для бэкапа (по умолчанию — домашний каталог SUDO_USER)
+    local default_dirs="/etc/"
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+        default_dirs="$(getent passwd "$SUDO_USER" | cut -d: -f6)/ /etc/"
     fi
+    local -a user_dirs
+    read -rp "$(printf '%s' "${CYAN}Директории для бэкапа через пробел [$default_dirs]: ${NC}")" -a user_dirs
+    if (( ${#user_dirs[@]} == 0 )); then
+        read -ra user_dirs <<< "$default_dirs"
+    fi
+    local dir
+    for dir in "${user_dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            err "Директория не существует: $dir"
+            return 1
+        fi
+    done
+    local backup_dirs_string="${user_dirs[*]}"
     info "Директории для бэкапа: $backup_dirs_string"
     
     # Создание скрипта бэкапа
@@ -149,24 +159,29 @@ node_modules/
 EXCLUDE
 
 echo "--- Starting Backup at \$(date) ---" >> "\$LOG_FILE"
-rsync -avz --delete --exclude-from="\$EXCLUDE_FILE" -e "ssh -p \$SSH_PORT" \$BACKUP_DIRS "\${REMOTE_DEST}:\${REMOTE_PATH}" >> "\$LOG_FILE" 2>&1
+# shellcheck disable=SC2086
+rsync -aRz --delete --exclude-from="\$EXCLUDE_FILE" -e "ssh -p \$SSH_PORT -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \$BACKUP_DIRS "\${REMOTE_DEST}:\${REMOTE_PATH}" >> "\$LOG_FILE" 2>&1
 echo "--- Backup completed at \$(date) ---" >> "\$LOG_FILE"
 EOF
     chmod 700 "$backup_script"
     ok "Скрипт бэкапа создан: $backup_script"
     
     # Настройка cron
-    local cron_schedule="5 3 * * *"
+    local cron_schedule input_schedule
     read -rp "$(printf '%s' "${CYAN}Введите расписание cron [5 3 * * *]: ${NC}")" input_schedule
     cron_schedule=${input_schedule:-"5 3 * * *"}
-    
-    # Добавление в crontab
-    if ! crontab -l 2>/dev/null | grep -q "$backup_script"; then
-        (crontab -l 2>/dev/null; echo "$cron_schedule $backup_script") | crontab -
-        ok "Задача добавлена в crontab."
-    else
-        info "Задача уже есть в crontab."
+    if [[ ! "$cron_schedule" =~ ^([^[:space:]]+[[:space:]]+){4}[^[:space:]]+$ && ! "$cron_schedule" =~ ^@(hourly|daily|weekly|monthly)$ ]]; then
+        err "Неверный формат расписания cron (ожидается 5 полей)."
+        return 1
     fi
+    
+    if ! command -v crontab >/dev/null 2>&1; then
+        run_cmd "apt-get install -y cron" || { err "Не удалось установить cron."; return 1; }
+    fi
+    
+    # Добавление/обновление задачи в crontab
+    (crontab -l 2>/dev/null | grep -vF "$backup_script"; echo "$cron_schedule $backup_script") | crontab -
+    ok "Задача бэкапа записана в crontab: $cron_schedule"
     
     # Тестовый запуск
     if ask_yes_no "Запустить тестовый бэкап сейчас?" "y"; then
@@ -208,7 +223,7 @@ _backup_status() {
         ok "Скрипт бэкапа найден: $backup_script"
         echo ""
         info "Содержимое скрипта:"
-        cat "$backup_script" | head -20
+        head -20 "$backup_script"
         echo ""
     else
         warn "Скрипт бэкапа не найден."
@@ -247,7 +262,7 @@ show_backup_menu() {
             2) _test_backup ;;
             3) _backup_status ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x -S warning server-setup.sh install.sh modules/*/*.sh tests/*.sh
+
+  tests:
+    name: Tests (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "ubuntu:24.04"]
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq openssh-client iproute2 procps systemd >/dev/null
+      - name: Unit tests
+        run: bash tests/run_tests.sh
+      - name: Smoke test — main menu opens and exits
+        run: printf 'q\n' | TERM=dumb timeout 30 bash server-setup.sh
+      - name: Smoke test — submenu navigation
+        run: printf '4\nb\n3\nb\nq\n' | TERM=dumb timeout 30 bash server-setup.sh
+      - name: Smoke test — --auto --check with example config
+        run: |
+          cp config/server.conf.example config/server.conf
+          chmod 600 config/server.conf
+          sed -i 's|^CFG_SSH_KEY=""|CFG_SSH_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ci@test"|' config/server.conf
+          TERM=dumb timeout 30 bash server-setup.sh --auto --check
+      - name: Smoke test — install.sh
+        run: |
+          bash install.sh
+          test -x /usr/local/bin/server-setup
+          printf 'q\n' | TERM=dumb timeout 30 server-setup

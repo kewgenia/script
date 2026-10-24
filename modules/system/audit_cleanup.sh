@@ -3,12 +3,12 @@
 # ==           МОДУЛЬ: АУДИТ И ОЧИСТКА              == #
 # ============================================================ #
 # Аудит безопасности (Lynis/debsecan) и очистка пакетов провайдера.
-# Версия: 1.0.0.
+# Версия: 1.1.0
 
 #
 # @menu.manifest
 #
-# @item( main | 11 | 🔍 Аудит и Очистка | show_audit_cleanup_menu | 110 | 110 | Проверка безопасности и очистка )
+# @item( main | 11 | 🔍 Аудит и Очистка | show_audit_cleanup_menu | 110 | 20 | Проверка безопасности и очистка )
 # @item( audit_cleanup | 1 | Запустить аудит безопасности | _run_security_audit | 10 | 10 | Lynis и debsecan )
 # @item( audit_cleanup | 2 | Очистка пакетов провайдера | _cleanup_provider_packages | 20 | 10 | Удаление пакетов VPS )
 # @item( audit_cleanup | 3 | Финальная очистка системы | _final_cleanup | 30 | 10 | Обновление и очистка )
@@ -20,37 +20,31 @@
 
 # Проверка, является ли система Debian
 _is_debian() {
-    if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        if [[ "$ID" == "debian" ]]; then
-            return 0
-        fi
-    fi
-    return 1
+    [[ -f /etc/os-release ]] && [[ "$(. /etc/os-release && echo "${ID:-}")" == "debian" ]]
 }
 
 # === ОСНОВНЫЕ ФУНКЦИИ =====================
 
 _run_security_audit() {
-    local section="Аудит безопасности"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Аудит безопасности"
     
     if ! ask_yes_no "Запустить аудит безопасности с помощью Lynis?" "y"; then
         info "Аудит безопасности пропущен."
         return 0
     fi
     
-    local audit_log="/var/log/setup_harden_security_audit_$(date +%Y%m%d_%H%M%S).log"
+    local audit_log
+    audit_log="/var/log/server-setup_audit_$(date +%Y%m%d_%H%M%S).log"
     touch "$audit_log" && chmod 600 "$audit_log"
     
     # Установка Lynis
     info "Установка Lynis..."
-    if ! apt-get update -qq; then
+    if ! run_cmd "apt-get update -qq"; then
         err "Не удалось обновить списки пакетов."
         return 1
     fi
     
-    if ! apt-get install -y -qq lynis; then
+    if ! run_cmd "apt-get install -y -qq lynis"; then
         warn "Не удалось установить Lynis."
         return 1
     fi
@@ -65,14 +59,15 @@ _run_security_audit() {
         
         # Извлечение индекса hardening
         local hardening_index
-        hardening_index=$(grep -oP "Hardening index : \K\d+" "$audit_log" || echo "Unknown")
+        hardening_index=$(grep -oP '^hardening_index=\K[0-9]+' /var/log/lynis-report.dat 2>/dev/null || echo "Unknown")
         info "Индекс hardening: $hardening_index"
         
-        # Извлечение топ-5 рекомендаций
-        grep "Suggestion:" /var/log/lynis-report.dat 2>/dev/null | head -n 5 > /tmp/lynis_suggestions.txt || true
-        if [[ -s /tmp/lynis_suggestions.txt ]]; then
+        # Извлечение топ-5 рекомендаций (формат: suggestion[]=ID|Текст|...)
+        local suggestions
+        suggestions=$(grep '^suggestion\[\]=' /var/log/lynis-report.dat 2>/dev/null | cut -d'|' -f2 | head -n 5 || true)
+        if [[ -n "$suggestions" ]]; then
             info "Топ-5 рекомендаций:"
-            cat /tmp/lynis_suggestions.txt
+            sed 's/^/  - /' <<< "$suggestions"
         fi
     else
         err "Аудит Lynis не удался. Проверьте $audit_log"
@@ -83,14 +78,17 @@ _run_security_audit() {
     if _is_debian; then
         if ask_yes_no "Также запустить debsecan для проверки уязвимостей?" "y"; then
             info "Установка debsecan..."
-            if ! apt-get install -y -qq debsecan; then
+            if ! run_cmd "apt-get install -y -qq debsecan"; then
                 warn "Не удалось установить debsecan."
             else
                 info "Запуск debsecan..."
-                if debsecan --suite "$VERSION_CODENAME" >> "$audit_log" 2>&1; then
+                local codename debsecan_out
+                codename=$(. /etc/os-release && echo "${VERSION_CODENAME:-}")
+                if debsecan_out=$(debsecan --suite "$codename" --only-fixed 2>&1); then
+                    printf '%s\n' "$debsecan_out" >> "$audit_log"
                     local vuln_count
-                    vuln_count=$(grep -c "CVE-" "$audit_log" || echo "0")
-                    print_warning "Найдено уязвимостей: $vuln_count"
+                    vuln_count=$(grep -c "CVE-" <<< "$debsecan_out" || true)
+                    print_warning "Уязвимостей с доступным исправлением: $vuln_count"
                     log "debsecan audit completed with $vuln_count vulnerabilities."
                 else
                     err "Аудит debsecan не удался."
@@ -106,8 +104,7 @@ _run_security_audit() {
 }
 
 _cleanup_provider_packages() {
-    local section="Очистка пакетов провайдера"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Очистка пакетов провайдера"
     
     # Определение окружения
     if ! command -v detect_environment >/dev/null 2>&1; then
@@ -166,9 +163,11 @@ _cleanup_provider_packages() {
     fi
     
     # Создание резервной копии
-    local backup_dir="/root/setup-backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir" && chmod 700 "$backup_dir"
-    info "Резервная копия будет сохранена в $backup_dir"
+    # Список установленных пакетов — для возможного восстановления
+    mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
+    dpkg --get-selections > "$BACKUP_DIR/dpkg-selections.txt" 2>/dev/null || true
+    info "Список пакетов сохранен в $BACKUP_DIR/dpkg-selections.txt"
+    warn "На некоторых VPS cloud-init и qemu-guest-agent нужны для сети, снапшотов и сброса пароля из панели."
     
     # Список пакетов провайдера
     local common_provider_pkgs=(
@@ -214,7 +213,7 @@ _cleanup_provider_packages() {
     # Удаление пакетов
     for pkg in "${found_pkgs[@]}"; do
         if [[ "$pkg" == "cloud-init" ]]; then
-            if ask_yes_no "Отключить cloud-init (рекомендуется)?" "y"; then
+            if ask_yes_no "Отключить cloud-init (не удаляя пакет)?" "n"; then
                 touch /etc/cloud/cloud-init.disabled
                 ok "cloud-init отключен."
                 # Не удаляем, просто отключаем
@@ -240,8 +239,7 @@ _cleanup_provider_packages() {
 }
 
 _final_cleanup() {
-    local section="Финальная очистка и обновление"
-    [[ $VERBOSE != false ]] && printf '\n%s\n' "${BLUE}▓▓▓ $section ▓▓▓${NC}" | tee -a "$LOG_FILE"
+    print_section "Финальная очистка и обновление"
     
     info "Выполнение финального обновления системы..."
     info "Это может занять некоторое время..."
@@ -289,7 +287,7 @@ show_audit_cleanup_menu() {
             2) _cleanup_provider_packages ;;
             3) _final_cleanup ;;
             b|B) break ;;
-            *) printf_error "Нет такого пункта." && sleep 1 ;;
+            *) err "Нет такого пункта." ;;
         esac
     done
     disable_graceful_ctrlc
