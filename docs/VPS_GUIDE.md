@@ -6,8 +6,6 @@
 - **[Способ 2](#способ-2-vs-code--remote-ssh)** — VS Code с расширением Remote-SSH: редактор на вашем компьютере, файлы и терминал — на сервере.
 - **[Способ 3](#способ-3-установка-и-настройка-сервера-скриптом-server-setup)** — первоначальная настройка и защита сервера скриптом Server Setup. На новом сервере её стоит выполнить до способов 1 и 2.
 
-> Пока исправления не влиты в `main`, используйте ветку `claude/vps-setup-script-review-0wy78q`.
-
 ---
 
 ## Способ 1 (основной). Claude Code на VPS + Remote Control
@@ -42,7 +40,7 @@ source ~/.bashrc
 ### 1.3. Проект и вход в аккаунт
 
 ```bash
-git clone -b claude/vps-setup-script-review-0wy78q https://github.com/kewgenia/script.git ~/script
+git clone https://github.com/kewgenia/script.git ~/script
 claude auth login
 ```
 
@@ -157,17 +155,19 @@ Host myvps
 
 ### 3.2. Установка
 
+Одной командой (под root):
+
 ```bash
 ssh root@IP_СЕРВЕРА
-apt update && apt install -y git
-git clone -b claude/vps-setup-script-review-0wy78q https://github.com/kewgenia/script.git
-cd script && bash install.sh
+bash <(curl -Ls https://raw.githubusercontent.com/kewgenia/script/main/install.sh)
 ```
 
-После слияния в `main` достаточно одной команды:
+Или через git — так скрипт удобно обновлять командой `git pull` (раздел 3.6):
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/kewgenia/script/main/install.sh)
+apt update && apt install -y git
+git clone https://github.com/kewgenia/script.git ~/script
+cd ~/script && bash install.sh
 ```
 
 Скрипт устанавливается в `/opt/server-setup`, команда запуска — `server-setup` (не под root — `sudo server-setup`).
@@ -248,6 +248,10 @@ server-setup
 
 ### 3.6. Обновление скрипта
 
+Если ставили через git:
+
 ```bash
-cd ~/script && git pull && bash install.sh   # конфигурация config/server.conf сохраняется
+cd ~/script && git pull && bash install.sh
 ```
+
+Если ставили одной командой — выполните её повторно. В обоих случаях `config/server.conf` сохраняется.
